@@ -33,6 +33,12 @@ export function getApiBaseUrl(): string {
   return (typeof process !== 'undefined' && process.env?.APP_URL) || 'http://localhost:3000';
 }
 
+const clientGeocodeCache = new Map<string, GeocodeDetailsResponse>();
+
+export function clearClientGeocodeCache(): void {
+  clientGeocodeCache.clear();
+}
+
 /**
  * Geocodes a destination or landmark worldwide with full diagnostic response.
  * Differentiates 400, 401, 403, 404, 429, timeouts, and network failures.
@@ -48,10 +54,15 @@ export async function geocodePlaceWithDetails(query: string): Promise<GeocodeDet
     };
   }
 
+  const cacheKey = q.toLowerCase().replace(/[\s\t\n]+/g, ' ').replace(/[,\.]+/g, ' ').trim();
+  if (clientGeocodeCache.has(cacheKey)) {
+    return clientGeocodeCache.get(cacheKey)!;
+  }
+
   // Client-side quick check: Verified Temples
   const temple = findVerifiedTemple(q);
   if (temple && isCoordinateInIndia(temple.lat, temple.lon)) {
-    return {
+    const res: GeocodeDetailsResponse = {
       source: 'verified_temple_registry',
       status: 200,
       results: [{
@@ -65,6 +76,8 @@ export async function geocodePlaceWithDetails(query: string): Promise<GeocodeDet
         verified: true
       }]
     };
+    clientGeocodeCache.set(cacheKey, res);
+    return res;
   }
 
   // Client-side quick check: Verified Indian Destinations
@@ -144,11 +157,15 @@ export async function geocodePlaceWithDetails(query: string): Promise<GeocodeDet
       };
     }
 
-    return {
+    const successRes: GeocodeDetailsResponse = {
       source: data.source || 'server',
       status: 200,
       results: Array.isArray(data.results) ? data.results : []
     };
+    if (successRes.results.length > 0) {
+      clientGeocodeCache.set(cacheKey, successRes);
+    }
+    return successRes;
   } catch (err: any) {
     clearTimeout(timeoutId);
     if (err.name === 'AbortError') {

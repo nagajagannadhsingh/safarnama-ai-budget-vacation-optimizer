@@ -1,6 +1,5 @@
 import express from 'express';
 import http from 'http';
-import { createServer as createViteServer } from 'vite';
 import dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
@@ -55,6 +54,7 @@ import { findInternationalDestination, INTERNATIONAL_DESTINATIONS } from './src/
 import { getEmergencyContactsForCountry } from './src/data/emergencyContacts.ts';
 import { getTravelAdvisoryForDestination } from './src/data/travelAdvisories.ts';
 import { enrichAccommodationsList, generateDeterministicReviewInsights } from './src/data/enrichedAccommodations.ts';
+import { resolveGeocodeQuery } from './src/services/globalGeocodingService.ts';
 
 // -------------------------------------------------------------
 // API: Health & Server Status
@@ -69,243 +69,35 @@ app.get('/api/health', (req, res) => {
 });
 
 // -------------------------------------------------------------
-// API: Geocode (Indian Verified Catalogue, International Registry, then Global OSM Nominatim)
+// API: Global Geocoding (Centralized Multi-Provider Cascade)
+// Supports cities, regions, POIs, temples, full addresses worldwide
 // -------------------------------------------------------------
-app.get('/api/geocode', async (req, res) => {
+const handleGeocodeRequest = async (req: express.Request, res: express.Response) => {
   try {
-    const query = (req.query.q as string || '').trim();
-    if (!query || query.length < 2) {
-      return res.status(400).json({
-        source: 'error',
-        status: 400,
-        results: [],
-        error: 'Query parameter q must be at least 2 characters.'
-      });
+    let query = '';
+    if (typeof req.query.q === 'string') {
+      query = req.query.q;
+    } else if (req.url && req.url.includes('?')) {
+      const parsed = new URL(req.url, 'http://localhost');
+      query = parsed.searchParams.get('q') || '';
     }
 
-    const cleanQuery = query.toLowerCase().trim();
-    const queryNorm = cleanQuery.replace(/[^a-z0-9]/g, '');
-
-    if (geocodeCache.has(cleanQuery)) {
-      return res.json({ source: 'cache', results: geocodeCache.get(cleanQuery) });
-    }
-
-    // 1. Check verified temples registry first (handles Indian temples like "Tirumala Sri Venkateswara Temple, Tirupati", "Kedarnath", etc.)
-    const matchedTemple = findVerifiedTemple(query);
-    if (matchedTemple && isCoordinateInIndia(matchedTemple.lat, matchedTemple.lon)) {
-      const templeResult = [{
-        place_id: `temple_${matchedTemple.id}`,
-        osm_id: 5000 + (matchedTemple.id ? matchedTemple.id.charCodeAt(0) : 1),
-        lat: matchedTemple.lat.toString(),
-        lon: matchedTemple.lon.toString(),
-        display_name: `${matchedTemple.name}, ${matchedTemple.city}, ${matchedTemple.state}, India`,
-        city: matchedTemple.city,
-        state: matchedTemple.state,
-        country: 'India',
-        is_india: true,
-        type: 'temple',
-        importance: 0.99,
-        verified: true
-      }];
-      geocodeCache.set(cleanQuery, templeResult);
-      return res.json({ source: 'verified_temple_registry', results: templeResult });
-    }
-
-    // 2. Check verified Indian destinations catalogue (handles "Tirupati, Andhra Pradesh", "Visakhapatnam", "Hyderabad", "Goa", "Manali", etc.)
-    const matchedDest = findVerifiedDestination(query);
-    if (matchedDest && isCoordinateInIndia(matchedDest.centerLat, matchedDest.centerLon)) {
-      const verifiedResult = [{
-        place_id: `verified_${matchedDest.destinationKey}`,
-        osm_id: 1000 + matchedDest.destinationKey.charCodeAt(0),
-        lat: matchedDest.centerLat.toString(),
-        lon: matchedDest.centerLon.toString(),
-        display_name: `${matchedDest.destinationName}, ${matchedDest.state}, India`,
-        city: matchedDest.destinationName,
-        state: matchedDest.state,
-        country: 'India',
-        is_india: true,
-        type: 'city',
-        importance: 0.99,
-        verified: true
-      }];
-      geocodeCache.set(cleanQuery, verifiedResult);
-      return res.json({ source: 'verified_registry', results: verifiedResult });
-    }
-
-    // 3. Check curated international destinations catalogue (handles "Thailand", "Bangkok", "Singapore", "Bali", "Paris", "Tokyo", "Dubai", "Vietnam", etc.)
-    const matchedIntl = findInternationalDestination(query);
-    if (matchedIntl) {
-      const intlResult = [{
-        place_id: `intl_${matchedIntl.id}`,
-        osm_id: 3000,
-        lat: matchedIntl.lat.toString(),
-        lon: matchedIntl.lon.toString(),
-        display_name: `${matchedIntl.name}, ${matchedIntl.country}`,
-        city: matchedIntl.name,
-        country: matchedIntl.country,
-        continent: matchedIntl.continent,
-        is_india: false,
-        currency: matchedIntl.currency,
-        currencyCode: matchedIntl.currencyCode,
-        currencySymbol: matchedIntl.currencySymbol,
-        exchangeRateToINR: matchedIntl.exchangeRateToINR,
-        type: 'international_destination',
-        importance: 0.99,
-        verified: true
-      }];
-      geocodeCache.set(cleanQuery, intlResult);
-      return res.json({ source: 'international_registry', results: intlResult });
-    }
-
-    // 4. Check 55+ Indian destinations database (handles names, states, aliases)
-    const exactDest = DESTINATIONS_DATA.find(d => {
-      const dNorm = d.name.toLowerCase().replace(/[^a-z0-9]/g, '');
-      const dClean = d.name.toLowerCase();
-      return queryNorm === dNorm || queryNorm.includes(dNorm) || dNorm.includes(queryNorm) || cleanQuery.includes(dClean);
-    });
-    if (exactDest && isCoordinateInIndia(exactDest.lat, exactDest.lon)) {
-      const destResult = [{
-        place_id: `dest_${exactDest.id}`,
-        osm_id: 2000,
-        lat: exactDest.lat.toString(),
-        lon: exactDest.lon.toString(),
-        display_name: `${exactDest.name}, ${exactDest.state}, India`,
-        city: exactDest.name,
-        state: exactDest.state,
-        country: 'India',
-        is_india: true,
-        type: 'destination',
-        importance: 0.98,
-        verified: true
-      }];
-      geocodeCache.set(cleanQuery, destResult);
-      return res.json({ source: 'destinations_registry', results: destResult });
-    }
-
-    // 5. Query OpenStreetMap Nominatim with global support
-    const tryNominatim = async (searchQuery: string, restrictToIndia = false): Promise<{ status: number; results?: any[]; error?: string }> => {
-      const countryParam = restrictToIndia ? '&countrycodes=in' : '';
-      const nominatimUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchQuery)}${countryParam}&limit=5&addressdetails=1`;
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 4000);
-
-      try {
-        const osmRes = await fetch(nominatimUrl, {
-          headers: {
-            'User-Agent': 'SafarnamaAI/1.0 (academic-travel-research; safarnama@student.edu)',
-            'Accept': 'application/json'
-          },
-          signal: controller.signal
-        });
-        clearTimeout(timeout);
-
-        if (osmRes.status === 429) {
-          return { status: 429, error: 'Nominatim rate limit reached. Please wait a moment.' };
-        }
-        if (osmRes.status === 401 || osmRes.status === 403) {
-          return { status: osmRes.status, error: `Nominatim authentication error ${osmRes.status}.` };
-        }
-        if (!osmRes.ok) {
-          return { status: osmRes.status, error: `Nominatim responded with HTTP ${osmRes.status}` };
-        }
-
-        const data: any = await osmRes.json();
-        if (Array.isArray(data) && data.length > 0) {
-          const valid = data
-            .map((item: any) => {
-              const lat = parseFloat(item.lat);
-              const lon = parseFloat(item.lon);
-              if (isNaN(lat) || isNaN(lon) || lat < -90 || lat > 90 || lon < -180 || lon > 180) {
-                return null;
-              }
-              const isIndia = isCoordinateInIndia(lat, lon) || item.address?.country_code === 'in';
-              const country = item.address?.country || (isIndia ? 'India' : 'International');
-              return {
-                ...item,
-                is_india: isIndia,
-                country,
-                city: item.address?.city || item.address?.town || item.address?.state_district || item.display_name.split(',')[0].trim()
-              };
-            })
-            .filter(Boolean);
-
-          if (valid.length > 0) {
-            return { status: 200, results: valid };
-          }
-        }
-        return { status: 404, results: [] };
-      } catch (err: any) {
-        clearTimeout(timeout);
-        if (err.name === 'AbortError') {
-          return { status: 504, error: 'Geocoding request timed out after 4 seconds.' };
-        }
-        return { status: 500, error: err.message };
-      }
-    };
-
-    // First attempt: try with global search
-    let nomResponse = await tryNominatim(query, false);
-
-    // If no results and query contains a comma (composite address like "Tirumala Sri Venkateswara Temple, Tirupati"):
-    if ((!nomResponse.results || nomResponse.results.length === 0) && query.includes(',')) {
-      const parts = query.split(',').map(p => p.trim()).filter(Boolean);
-      // Try first part (e.g. landmark)
-      if (parts[0]) {
-        const subRes = await tryNominatim(parts[0], false);
-        if (subRes.results && subRes.results.length > 0) {
-          nomResponse = subRes;
-        }
-      }
-      // If still empty, try second part
-      if ((!nomResponse.results || nomResponse.results.length === 0) && parts[1]) {
-        const subRes = await tryNominatim(parts[1], false);
-        if (subRes.results && subRes.results.length > 0) {
-          nomResponse = subRes;
-        }
-      }
-    }
-
-    if (nomResponse.status === 200 && nomResponse.results && nomResponse.results.length > 0) {
-      geocodeCache.set(cleanQuery, nomResponse.results);
-      return res.json({ source: 'nominatim', results: nomResponse.results });
-    }
-
-    if (nomResponse.status === 429) {
-      return res.status(429).json({
-        source: 'error',
-        status: 429,
-        results: [],
-        error: 'Geocoding service rate limit reached. Please wait a moment and try again.'
-      });
-    }
-
-    if (nomResponse.status === 504) {
-      return res.status(504).json({
-        source: 'timeout',
-        status: 504,
-        results: [],
-        error: 'Geocoding request timed out. Please check your connection or select a verified destination from the catalogue.'
-      });
-    }
-
-    // Honest empty response: Never fabricate coordinates
-    return res.status(404).json({
-      source: 'none',
-      status: 404,
-      results: [],
-      error: `No verified geographic location found matching "${query}". Please check spelling, choose from the destination catalogue, or select a location on the interactive map.`
-    });
-
+    const result = await resolveGeocodeQuery(query);
+    return res.status(result.status).json(result);
   } catch (err: any) {
-    console.warn('Geocoding error:', err.message);
+    console.error('[Geocode Route] Unexpected error:', err);
     return res.status(500).json({
       source: 'error',
       status: 500,
       results: [],
-      error: `Geocoding request failed: ${err.message}`
+      count: 0,
+      error: 'An internal error occurred during geocoding. Please retry.'
     });
   }
-});
+};
+
+app.get('/api/geocode', handleGeocodeRequest);
+app.get('/geocode', handleGeocodeRequest);
 
 // -------------------------------------------------------------
 // Free Public GIS Integration: Overpass API Helpers
@@ -1878,6 +1670,7 @@ async function startServer() {
 
   if (!isProd) {
     const isHmrDisabled = process.env.DISABLE_HMR === 'true';
+    const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: {
         middlewareMode: true,
