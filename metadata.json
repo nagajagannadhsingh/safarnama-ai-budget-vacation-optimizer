@@ -1,0 +1,6 @@
+{
+  "name": "AI Budget Vacation Optimizer",
+  "description": "Smart, budget-conscious vacation planning and real-world itinerary optimization worldwide with interactive maps, flight search, authentic lodging, and transparent expense breakdowns.",
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

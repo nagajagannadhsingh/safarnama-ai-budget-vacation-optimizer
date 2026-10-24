@@ -1,0 +1,119 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: 'Open Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-heading: 'Montserrat', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-montserrat: 'Montserrat', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-serif: 'Montserrat', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-open-sans: 'Open Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  
+  /* Primary Brand Palette */
+  --color-soft-ivory: #FAF7F0;
+  --color-ivory: #FAF7F0;
+  --color-ivory-warm: #FFFFFF;
+  --color-plum: #4B294F;
+  --color-plum-dark: #371C3A;
+  --color-aqua: #78C9D0;
+  --color-aqua-dark: #58B4BC;
+  --color-desert-sand: #D8C3A5;
+  --color-sand: #D8C3A5;
+  --color-sand-light: #F2EBE1;
+  --color-magenta: #C2185B;
+  --color-magenta-hover: #A7134D;
+  --color-orchid: #9B72CF;
+  --color-orchid-dark: #8459BA;
+  
+  /* Refined Supporting Tones */
+  --color-charcoal: #24212B;
+  --color-charcoal-deep: #191620;
+  --color-slate-text: #77717F;
+  --color-muted-lavender: #B7A5D9;
+  --color-pale-lilac: #EEE8F7;
+  --color-cool-silver: #DCD9E3;
+}
+
+/* =========================================================
+   TYPOGRAPHY SYSTEM & HIERARCHY
+   - Open Sans Regular (400): Body text, descriptions, paragraphs, forms, general content
+   - Open Sans Semibold (600): Navigation links, labels, secondary headings
+   - Montserrat Medium (500): Buttons, navigation highlights, card labels, important UI text
+   - Montserrat Bold (700): Main headings, page titles, hero headings, section headings
+   ========================================================= */
+
+html, body {
+  font-family: var(--font-sans);
+  font-weight: 400;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Montserrat Bold (700): Main headings, page titles, hero headings, section headings */
+h1, h2, h3, .font-heading, .font-serif, .hero-heading, .main-title {
+  font-family: var(--font-heading);
+  font-weight: 700;
+}
+
+/* Open Sans Semibold (600): Secondary headings & subheadings */
+h4, h5, h6, .subheading, .secondary-heading {
+  font-family: var(--font-sans);
+  font-weight: 600;
+}
+
+/* Open Sans Semibold (600): Navigation links & form labels */
+label, .font-label, .form-label, nav a, .nav-link {
+  font-family: var(--font-sans);
+  font-weight: 600;
+}
+
+/* Montserrat Medium (500): Buttons, navigation highlights, card labels, important UI text */
+button, [role="button"], .btn, .font-button, .card-label, .badge-label, .nav-highlight {
+  font-family: var(--font-heading);
+  font-weight: 500;
+}
+
+/* Open Sans Regular (400): Body text, descriptions, paragraphs, forms, general content */
+p, input, textarea, select, .font-body, .description {
+  font-family: var(--font-sans);
+  font-weight: 400;
+}
+
+/* Ensure Leaflet maps render properly inside flex/grid containers */
+.leaflet-container {
+  width: 100%;
+  height: 100%;
+  z-index: 10;
+  font-family: inherit;
+}
+
+.leaflet-popup-content-wrapper {
+  border-radius: 16px;
+  padding: 4px;
+  background-color: #FAF7F0;
+  color: #24212B;
+  box-shadow: 0 16px 32px -8px rgba(75, 41, 79, 0.18), 0 8px 16px -4px rgba(75, 41, 79, 0.1);
+  border: 1px solid #D8C3A5;
+}
+
+.leaflet-popup-content {
+  margin: 10px 14px;
+  line-height: 1.45;
+}
+
+/* Custom scrollbars for modals and tabs */
+::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+::-webkit-scrollbar-track {
+  background: #FAF7F0;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #D8C3A5;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #9B72CF;
+}
