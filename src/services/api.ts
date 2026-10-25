@@ -466,7 +466,7 @@ export async function generateFullTripPlan(
       }))
   };
 
-  const response = await fetch(`${getApiBaseUrl()}/api/generate-itinerary`, {
+  const response = await fetch(`${getApiBaseUrl()}/api/itinerary`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
@@ -544,10 +544,11 @@ export async function analyzeTripWithAI(
   budgetPlan: BudgetPlan,
   places?: PlaceItem[]
 ): Promise<AIAnalysisResult> {
-  const res = await fetch(`${getApiBaseUrl()}/api/analyze-trip`, {
+  const res = await fetch(`${getApiBaseUrl()}/api/itinerary?action=analyze`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
+      action: 'analyze',
       destination: formData.destination,
       origin: formData.origin,
       totalBudget: formData.totalBudget,

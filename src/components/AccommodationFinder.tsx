@@ -85,7 +85,7 @@ export const AccommodationFinder: React.FC<AccommodationFinderProps> = ({
     setCurrentInsights(null);
 
     try {
-      const res = await fetch('/api/accommodations/review-insights', {
+      const res = await fetch('/api/accommodations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ accommodation: item, destination: destinationName })

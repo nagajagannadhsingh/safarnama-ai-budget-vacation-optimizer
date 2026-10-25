@@ -1,4 +1,4 @@
-import { enableCors, sendJson, sendError, getQueryParam } from '../../src/services/serverlessUtils.ts';
+import { enableCors, sendJson, sendError, getQueryParam } from '../src/services/serverlessUtils.ts';
 
 export default async function handler(req: any, res: any) {
   if (enableCors(req, res)) return;

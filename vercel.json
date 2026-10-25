@@ -4,6 +4,34 @@
   "outputDirectory": "dist",
   "rewrites": [
     {
+      "source": "/api",
+      "destination": "/api/health"
+    },
+    {
+      "source": "/api/generate-itinerary",
+      "destination": "/api/itinerary"
+    },
+    {
+      "source": "/api/analyze-trip",
+      "destination": "/api/itinerary?action=analyze"
+    },
+    {
+      "source": "/api/accommodations/review-insights",
+      "destination": "/api/accommodations"
+    },
+    {
+      "source": "/api/flights/search",
+      "destination": "/api/flights"
+    },
+    {
+      "source": "/api/safety/emergency-contacts",
+      "destination": "/api/safety?type=contacts"
+    },
+    {
+      "source": "/api/safety/advisories",
+      "destination": "/api/safety?type=advisories"
+    },
+    {
       "source": "/((?!api/).*)",
       "destination": "/index.html"
     }

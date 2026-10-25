@@ -15,6 +15,17 @@ export default async function handler(req: any, res: any) {
       reason: cbStatus.reason || undefined
     },
     timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV || 'production'
+    environment: process.env.NODE_ENV || 'production',
+    endpoints: [
+      '/api/health',
+      '/api/geocode',
+      '/api/itinerary',
+      '/api/places',
+      '/api/accommodations',
+      '/api/route',
+      '/api/optimize-budget',
+      '/api/flights',
+      '/api/safety'
+    ]
   });
 }
