@@ -451,17 +451,19 @@ export async function generateFullTripPlan(
     currency,
     isInternational,
     distanceKm,
-    nearbyPlaces: places.map(p => ({
-      id: p.id,
-      name: p.name,
-      type: p.type,
-      lat: p.lat,
-      lon: p.lon,
-      address: p.address,
-      description: p.description,
-      estFee: p.estFee,
-      googleMapsUrl: p.googleMapsUrl
-    }))
+    nearbyPlaces: places
+      .filter((p: any) => p && p.name && typeof p.lat === 'number' && typeof p.lon === 'number' && !isNaN(p.lat) && !isNaN(p.lon))
+      .map(p => ({
+        id: p.id,
+        name: p.name,
+        type: p.type,
+        lat: p.lat,
+        lon: p.lon,
+        address: p.address,
+        description: p.description,
+        estFee: p.estFee,
+        googleMapsUrl: p.googleMapsUrl
+      }))
   };
 
   const response = await fetch(`${getApiBaseUrl()}/api/generate-itinerary`, {

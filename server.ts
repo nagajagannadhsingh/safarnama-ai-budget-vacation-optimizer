@@ -1691,8 +1691,16 @@ async function startServer() {
   });
 }
 
-// Only start listening if not running inside a serverless environment like Vercel
-if (!process.env.VERCEL) {
+// Only start listening if directly run (not imported by serverless handlers or test runners)
+const isDirectRun = Boolean(
+  process.argv[1] && (
+    process.argv[1].endsWith('server.ts') ||
+    process.argv[1].endsWith('server.js') ||
+    process.argv[1].includes('tsx')
+  )
+);
+
+if (!process.env.VERCEL && isDirectRun) {
   startServer().catch((err) => {
     console.error('Failed to start server:', err);
     process.exit(1);
