@@ -42,6 +42,12 @@ export interface GeocodeServiceResponse {
   count: number;
 }
 
+let activeFetch: typeof fetch = typeof globalThis.fetch === 'function' ? globalThis.fetch : (fetch as any);
+
+export function setCustomFetch(customFetch: typeof fetch | null): void {
+  activeFetch = customFetch || (typeof globalThis.fetch === 'function' ? globalThis.fetch : (fetch as any));
+}
+
 // Bounded in-memory cache to reduce upstream calls and accelerate repeated queries
 interface CacheEntry {
   data: GeocodeResultItem[];
@@ -55,6 +61,10 @@ const geocodeMemoryCache = new Map<string, CacheEntry>();
 
 export function clearGeocodeCache(): void {
   geocodeMemoryCache.clear();
+}
+
+export function getGeocodeCacheSize(): number {
+  return geocodeMemoryCache.size;
 }
 
 export function normalizeQueryKey(query: string): string {
@@ -201,7 +211,7 @@ async function queryPhotonProvider(query: string, timeoutMs = 3500): Promise<Geo
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const res = await fetch(url, {
+    const res = await activeFetch(url, {
       headers: {
         'Accept': 'application/json',
         'User-Agent': 'SafarnamaAI/1.0 (academic-travel-research; safarnama@student.edu)'
@@ -230,7 +240,7 @@ async function queryPhotonProvider(query: string, timeoutMs = 3500): Promise<Geo
 
       const props = feat.properties || {};
       const name = props.name || props.street || query;
-      const city = props.city || props.town || props.village || props.district || props.county || '';
+      const city = props.city || props.town || props.village || props.district || props.county || (props.type === 'city' || props.osm_value === 'city' ? name : '') || name;
       const state = props.state || '';
       const country = props.country || (props.countrycode === 'IN' ? 'India' : 'International');
       const countryCode = (props.countrycode || '').toLowerCase();
@@ -284,7 +294,7 @@ async function queryOpenMeteoProvider(query: string, timeoutMs = 3000): Promise<
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const res = await fetch(url, {
+    const res = await activeFetch(url, {
       headers: { 'Accept': 'application/json' },
       signal: controller.signal
     });
@@ -352,7 +362,7 @@ async function queryNominatimProvider(query: string, timeoutMs = 3500): Promise<
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const res = await fetch(nominatimUrl, {
+    const res = await activeFetch(nominatimUrl, {
       headers: {
         'User-Agent': 'SafarnamaAI/1.0 (academic-travel-research; safarnama@student.edu)',
         'Accept': 'application/json'
