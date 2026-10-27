@@ -55,21 +55,12 @@ export const TravelSafetyAssistant: React.FC<TravelSafetyAssistantProps> = ({ pl
 
     async function loadSafetyData() {
       try {
-        const [emRes, advRes] = await Promise.all([
-          fetch(`/api/safety/emergency-contacts?destination=${encodeURIComponent(destination)}&country=${encodeURIComponent(country)}`),
-          fetch(`/api/safety/advisories?destination=${encodeURIComponent(destination)}&country=${encodeURIComponent(country)}`)
-        ]);
-
-        if (emRes.ok) {
-          const emJson = await emRes.json();
-          if (isMounted && emJson.contacts) {
-            setEmergencyData(emJson.contacts);
-          }
-        }
-        if (advRes.ok) {
-          const advJson = await advRes.json();
-          if (isMounted && advJson.advisory) {
-            setAdvisoryData(advJson.advisory);
+        const res = await fetch(`/api/safety?destination=${encodeURIComponent(destination)}&country=${encodeURIComponent(country)}`);
+        if (res.ok) {
+          const json = await res.json();
+          if (isMounted) {
+            if (json.contacts) setEmergencyData(json.contacts);
+            if (json.advisory) setAdvisoryData(json.advisory);
           }
         }
       } catch {

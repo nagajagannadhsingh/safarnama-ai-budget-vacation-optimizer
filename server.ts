@@ -523,7 +523,40 @@ app.get('/api/accommodations', async (req, res) => {
 });
 
 // -------------------------------------------------------------
-// API: Verified Emergency Contacts Directory
+// API: Unified Safety (Contacts + Advisories)
+// -------------------------------------------------------------
+app.get('/api/safety', (req, res) => {
+  try {
+    const destination = (req.query.destination as string || 'General').trim();
+    const country = (req.query.country as string || 'India').trim();
+    const type = ((req.query.type as string) || 'all').toLowerCase();
+
+    if (type === 'contacts' || type === 'emergency') {
+      const contacts = getEmergencyContactsForCountry(country || destination);
+      return res.json({ success: true, country: contacts.country || country, destination, contacts });
+    }
+
+    if (type === 'advisories' || type === 'advisory') {
+      const advisory = getTravelAdvisoryForDestination(destination, country);
+      return res.json({ success: true, destination, country: advisory.country || country, advisory });
+    }
+
+    const contacts = getEmergencyContactsForCountry(country || destination);
+    const advisory = getTravelAdvisoryForDestination(destination, country);
+    return res.json({
+      success: true,
+      destination,
+      country: advisory.country || contacts.country || country,
+      contacts,
+      advisory
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to retrieve safety data: ' + err.message });
+  }
+});
+
+// -------------------------------------------------------------
+// API: Verified Emergency Contacts Directory (Legacy alias)
 // -------------------------------------------------------------
 app.get('/api/safety/emergency-contacts', (req, res) => {
   try {
@@ -542,7 +575,7 @@ app.get('/api/safety/emergency-contacts', (req, res) => {
 });
 
 // -------------------------------------------------------------
-// API: Official Travel Advisories & Destination Risks
+// API: Official Travel Advisories & Destination Risks (Legacy alias)
 // -------------------------------------------------------------
 app.get('/api/safety/advisories', (req, res) => {
   try {
@@ -563,7 +596,7 @@ app.get('/api/safety/advisories', (req, res) => {
 // -------------------------------------------------------------
 // API: AI-Powered Hotel Review Insights (Gemini 3.8 Flash + Deterministic Fallback)
 // -------------------------------------------------------------
-app.post('/api/accommodations/review-insights', async (req, res) => {
+app.post(['/api/accommodations', '/api/accommodations/review-insights'], async (req, res) => {
   try {
     const { accommodation, destination = '' } = req.body;
     if (!accommodation || !accommodation.name) {
@@ -992,7 +1025,7 @@ const geminiCircuitBreaker = {
 // -------------------------------------------------------------
 // API: Generate AI Itinerary using Gemini with Strict Fallback
 // -------------------------------------------------------------
-app.post('/api/generate-itinerary', async (req, res) => {
+app.post(['/api/itinerary', '/api/generate-itinerary'], async (req, res) => {
   try {
     const {
       origin,
@@ -1575,7 +1608,7 @@ Respond ONLY with valid JSON. Do not include markdown code block syntax.`;
 // -------------------------------------------------------------
 // API: Flights & Air Travel Options
 // -------------------------------------------------------------
-app.get('/api/flights/search', (req, res) => {
+app.get(['/api/flights', '/api/flights/search'], (req, res) => {
   try {
     const origin = (req.query.origin as string || '').trim();
     const destination = (req.query.destination as string || '').trim();

@@ -104,7 +104,7 @@ export const FlightsSection: React.FC<FlightsSectionProps> = ({
         children: children.toString(),
         cabinClass
       });
-      const res = await fetch(`/api/flights/search?${params.toString()}`);
+      const res = await fetch(`/api/flights?${params.toString()}`);
       if (res.ok) {
         const data = await res.json();
         setFlightData(data);
