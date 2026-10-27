@@ -43,7 +43,6 @@ async function requestJson<T>(
     if (controller.signal.aborted) {
       throw new Error("The request timed out. Please try again.");
     }
-
     throw error;
   } finally {
     clearTimeout(timeout);
@@ -84,9 +83,7 @@ async function geocodeDestination(
   return { lat, lon };
 }
 
-function validAccommodation(
-  item: AccommodationItem
-): boolean {
+function validAccommodation(item: AccommodationItem): boolean {
   return Boolean(
     item &&
       typeof item.name === "string" &&
@@ -98,6 +95,10 @@ function validAccommodation(
       item.lon >= -180 &&
       item.lon <= 180
   );
+}
+
+function accommodationKey(item: AccommodationItem): string {
+  return `${item.name.trim().toLowerCase()}|${item.lat.toFixed(5)}|${item.lon.toFixed(5)}`;
 }
 
 function mapsUrl(item: AccommodationItem): string {
@@ -137,6 +138,49 @@ export function AccommodationFinder({
 
   const requestNumber = useRef(0);
 
+  // Keep parent-provided genuine records visible and merge matching records.
+  const mergeAccommodations = useCallback(
+    (
+      existing: AccommodationItem[],
+      incoming: AccommodationItem[]
+    ): AccommodationItem[] => {
+      const combined = new Map<string, AccommodationItem>();
+
+      for (const item of existing.filter(validAccommodation)) {
+        combined.set(accommodationKey(item), item);
+      }
+
+      for (const item of incoming.filter(validAccommodation)) {
+        const key = accommodationKey(item);
+        const previous = combined.get(key);
+
+        // Prefer the newest API record, retaining useful existing details
+        // when the API leaves optional fields empty.
+        combined.set(
+          key,
+          previous
+            ? {
+                ...previous,
+                ...item,
+                address: item.address || previous.address,
+                phone: item.phone || previous.phone,
+                website: item.website || previous.website,
+                googleMapsUrl: item.googleMapsUrl || previous.googleMapsUrl,
+                source: item.source || previous.source,
+                distanceKm: item.distanceKm ?? previous.distanceKm,
+              }
+            : item
+        );
+      }
+
+      return Array.from(combined.values()).sort(
+        (a, b) =>
+          (a.distanceKm ?? Infinity) - (b.distanceKm ?? Infinity)
+      );
+    },
+    []
+  );
+
   const loadAccommodations = useCallback(async () => {
     const requestId = ++requestNumber.current;
 
@@ -153,12 +197,10 @@ export function AccommodationFinder({
     setMessage("");
 
     try {
-      // Resolve the selected destination to actual geographic coordinates.
       const { lat, lon } = await geocodeDestination(destination);
 
       if (requestId !== requestNumber.current) return;
 
-      // Use SAFARNAMA AI's existing backend route.
       const params = new URLSearchParams({
         lat: String(lat),
         lon: String(lon),
@@ -180,26 +222,15 @@ export function AccommodationFinder({
         );
       }
 
-      const validResults = data.accommodations.filter(validAccommodation);
-
-      // Deduplicate by provider ID where available, otherwise by name and location.
-      const unique = new Map<string, AccommodationItem>();
-
-      for (const item of validResults) {
-        const key = item.id != null
-          ? String(item.id)
-          : `${item.name.toLowerCase()}-${item.lat}-${item.lon}`;
-
-        if (!unique.has(key)) unique.set(key, item);
-      }
-
-      const sorted = Array.from(unique.values()).sort(
-        (a, b) => (a.distanceKm ?? Infinity) - (b.distanceKm ?? Infinity)
+      // Merge instead of replacing existing records with a smaller response.
+      const merged = mergeAccommodations(
+        accommodations,
+        data.accommodations
       );
 
-      setResults(sorted);
+      setResults(merged);
 
-      if (sorted.length === 0) {
+      if (merged.length === 0) {
         setMessage(
           data.message ||
             `No accommodation listings were returned for ${destination}. OpenStreetMap coverage may be incomplete.`
@@ -214,18 +245,16 @@ export function AccommodationFinder({
           : "Accommodation could not be loaded."
       );
 
-      // Preserve real records already supplied by the parent.
+      // Retain genuine records already available from the parent.
       setResults((current) =>
-        current.length > 0
-          ? current
-          : accommodations.filter(validAccommodation)
+        mergeAccommodations(current, accommodations)
       );
     } finally {
       if (requestId === requestNumber.current) {
         setLoading(false);
       }
     }
-  }, [destination, accommodations]);
+  }, [destination, accommodations, mergeAccommodations]);
 
   useEffect(() => {
     if (!destination) {
@@ -237,8 +266,10 @@ export function AccommodationFinder({
       return;
     }
 
-    // Show existing genuine records immediately while refreshing.
-    setResults(accommodations.filter(validAccommodation));
+    // Display available records immediately while refreshing.
+    setResults((current) =>
+      mergeAccommodations(current, accommodations)
+    );
 
     const timer = setTimeout(() => {
       void loadAccommodations();
@@ -248,7 +279,13 @@ export function AccommodationFinder({
       clearTimeout(timer);
       requestNumber.current++;
     };
-  }, [destination, retryKey, loadAccommodations, accommodations]);
+  }, [
+    destination,
+    retryKey,
+    accommodations,
+    mergeAccommodations,
+    loadAccommodations,
+  ]);
 
   const displayedResults = results;
 
@@ -258,7 +295,7 @@ export function AccommodationFinder({
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h2 className="text-xl font-bold text-[#4B294F]">
-              Hotels & Accommodation
+              Hotels &amp; Accommodation
             </h2>
             <p className="mt-1 text-sm text-gray-600">
               Real mapped properties near your selected destination.
@@ -279,9 +316,9 @@ export function AccommodationFinder({
         </div>
 
         <p className="mt-3 text-xs leading-5 text-gray-500">
-          Data is retrieved through SAFARNAMA AI's existing accommodation
-          endpoint. Map listings do not confirm current operation or
-          reservation availability.
+          Listings come from the existing accommodation API and supplied
+          trip data. Map listings do not confirm current operation,
+          room prices, or reservation availability.
         </p>
       </div>
 
@@ -322,7 +359,7 @@ export function AccommodationFinder({
         </div>
       )}
 
-      {message && !loading && (
+      {message && !loading && displayedResults.length === 0 && (
         <div className="rounded-2xl border border-purple-100 bg-white p-5">
           <p className="text-sm leading-6 text-gray-700">{message}</p>
           {destination && (
@@ -351,7 +388,7 @@ export function AccommodationFinder({
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             {displayedResults.map((hotel) => (
               <article
-                key={String(hotel.id)}
+                key={accommodationKey(hotel)}
                 className="flex flex-col rounded-2xl border border-purple-100 bg-white p-5 shadow-sm transition hover:shadow-md"
               >
                 <span className="w-fit rounded-full bg-purple-50 px-3 py-1 text-xs font-medium text-[#4B294F]">
