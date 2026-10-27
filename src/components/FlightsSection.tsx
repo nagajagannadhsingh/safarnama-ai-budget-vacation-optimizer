@@ -1,5 +1,16 @@
-import React, { useState, useEffect } from 'react';
-import { Plane, Calendar, Users, ArrowRightLeft, ExternalLink, ShieldCheck, AlertCircle, Sparkles, Clock, Luggage, Info, Compass } from 'lucide-react';
+
+import React, { useEffect, useState } from 'react';
+import {
+  Plane,
+  Calendar,
+  Users,
+  ArrowRightLeft,
+  ExternalLink,
+  ShieldCheck,
+  AlertCircle,
+  Clock,
+  Luggage,
+} from 'lucide-react';
 import { TripFormData } from '../types';
 
 interface FlightsSectionProps {
@@ -8,444 +19,488 @@ interface FlightsSectionProps {
   originName: string;
 }
 
-// Major airport IATA lookup helper for smart airport code suggestions
-const AIRPORT_IATA_MAP: Record<string, { code: string; name: string }> = {
-  'delhi': { code: 'DEL', name: 'Indira Gandhi International Airport' },
-  'mumbai': { code: 'BOM', name: 'Chhatrapati Shivaji Maharaj International Airport' },
-  'bengaluru': { code: 'BLR', name: 'Kempegowda International Airport' },
-  'bangalore': { code: 'BLR', name: 'Kempegowda International Airport' },
-  'hyderabad': { code: 'HYD', name: 'Rajiv Gandhi International Airport' },
-  'chennai': { code: 'MAA', name: 'Chennai International Airport' },
-  'kolkata': { code: 'CCU', name: 'Netaji Subhash Chandra Bose International Airport' },
-  'goa': { code: 'GOI', name: 'Dabolim / Mopa International Airport' },
-  'jaipur': { code: 'JAI', name: 'Jaipur International Airport' },
-  'kochi': { code: 'COK', name: 'Cochin International Airport' },
-  'ahmedabad': { code: 'AMD', name: 'Sardar Vallabhbhai Patel International Airport' },
-  'pune': { code: 'PNQ', name: 'Pune Airport' },
-  'bangkok': { code: 'BKK', name: 'Suvarnabhumi Airport / Don Mueang (DMK)' },
-  'thailand': { code: 'BKK', name: 'Suvarnabhumi Airport (BKK)' },
-  'singapore': { code: 'SIN', name: 'Singapore Changi Airport' },
-  'bali': { code: 'DPS', name: 'Ngurah Rai International Airport (Denpasar)' },
-  'kuala lumpur': { code: 'KUL', name: 'Kuala Lumpur International Airport' },
-  'malaysia': { code: 'KUL', name: 'Kuala Lumpur International Airport (KUL)' },
-  'hanoi': { code: 'HAN', name: 'Noi Bai International Airport' },
-  'vietnam': { code: 'HAN', name: 'Noi Bai (Hanoi) / Tan Son Nhat (SGN)' },
-  'dubai': { code: 'DXB', name: 'Dubai International Airport' },
-  'uae': { code: 'DXB', name: 'Dubai International Airport' },
-  'tokyo': { code: 'HND', name: 'Tokyo Haneda / Narita (NRT)' },
-  'japan': { code: 'HND', name: 'Haneda / Narita Airport' },
-  'paris': { code: 'CDG', name: 'Paris Charles de Gaulle / Orly (ORY)' },
-  'france': { code: 'CDG', name: 'Charles de Gaulle Airport' },
-  'london': { code: 'LHR', name: 'London Heathrow / Gatwick (LGW)' },
-  'uk': { code: 'LHR', name: 'London Heathrow Airport' },
-  'rome': { code: 'FCO', name: 'Rome Leonardo da Vinci–Fiumicino' },
-  'italy': { code: 'FCO', name: 'Fiumicino Airport' },
-  'barcelona': { code: 'BCN', name: 'Josep Tarradellas Barcelona-El Prat' },
-  'new york': { code: 'JFK', name: 'John F. Kennedy / Newark (EWR)' },
-  'usa': { code: 'JFK', name: 'JFK / Newark / LAX' },
-  'sydney': { code: 'SYD', name: 'Sydney Kingsford Smith Airport' },
-  'australia': { code: 'SYD', name: 'Kingsford Smith Airport' },
-  'cairo': { code: 'CAI', name: 'Cairo International Airport' },
-  'egypt': { code: 'CAI', name: 'Cairo International Airport' },
-  'cape town': { code: 'CPT', name: 'Cape Town International Airport' },
-  'istanbul': { code: 'IST', name: 'Istanbul Airport / Sabiha Gökçen' },
-  'colombo': { code: 'CMB', name: 'Bandaranaike International Airport' },
-  'sri lanka': { code: 'CMB', name: 'Bandaranaike International Airport' },
-  'kathmandu': { code: 'KTM', name: 'Tribhuvan International Airport' },
-  'nepal': { code: 'KTM', name: 'Tribhuvan International Airport' }
-};
+interface Airport {
+  code: string;
+  city: string;
+  name: string;
+  country: string;
+  aliases: string[];
+}
 
-function getSuggestedAirport(name: string): { code: string; name: string } | null {
-  if (!name) return null;
-  const q = name.toLowerCase().trim();
-  for (const [key, val] of Object.entries(AIRPORT_IATA_MAP)) {
-    if (q.includes(key) || key.includes(q)) {
-      return val;
-    }
-  }
-  return null;
+// Curated airport list. This is not a complete global airport database.
+const AIRPORTS: Airport[] = [
+  { code: 'DEL', city: 'Delhi', name: 'Indira Gandhi International Airport', country: 'India', aliases: ['delhi', 'new delhi'] },
+  { code: 'BOM', city: 'Mumbai', name: 'Chhatrapati Shivaji Maharaj International Airport', country: 'India', aliases: ['mumbai', 'bombay'] },
+  { code: 'BLR', city: 'Bengaluru', name: 'Kempegowda International Airport', country: 'India', aliases: ['bengaluru', 'bangalore'] },
+  { code: 'HYD', city: 'Hyderabad', name: 'Rajiv Gandhi International Airport', country: 'India', aliases: ['hyderabad'] },
+  { code: 'MAA', city: 'Chennai', name: 'Chennai International Airport', country: 'India', aliases: ['chennai', 'madras'] },
+  { code: 'CCU', city: 'Kolkata', name: 'Netaji Subhas Chandra Bose International Airport', country: 'India', aliases: ['kolkata', 'calcutta'] },
+  { code: 'GOI', city: 'Goa - Dabolim', name: 'Dabolim Airport', country: 'India', aliases: [] },
+  { code: 'GOX', city: 'Goa - North Goa', name: 'Manohar International Airport', country: 'India', aliases: [] },
+  { code: 'VGA', city: 'Vijayawada', name: 'Vijayawada International Airport', country: 'India', aliases: ['vijayawada'] },
+  { code: 'VTZ', city: 'Visakhapatnam', name: 'Visakhapatnam International Airport', country: 'India', aliases: ['visakhapatnam', 'vizag'] },
+  { code: 'JAI', city: 'Jaipur', name: 'Jaipur International Airport', country: 'India', aliases: ['jaipur'] },
+  { code: 'COK', city: 'Kochi', name: 'Cochin International Airport', country: 'India', aliases: ['kochi', 'cochin'] },
+  { code: 'TRV', city: 'Thiruvananthapuram', name: 'Trivandrum International Airport', country: 'India', aliases: ['thiruvananthapuram', 'trivandrum'] },
+  { code: 'AMD', city: 'Ahmedabad', name: 'Sardar Vallabhbhai Patel International Airport', country: 'India', aliases: ['ahmedabad'] },
+  { code: 'PNQ', city: 'Pune', name: 'Pune Airport', country: 'India', aliases: ['pune'] },
+  { code: 'IXM', city: 'Madurai', name: 'Madurai Airport', country: 'India', aliases: ['madurai'] },
+  { code: 'TRZ', city: 'Tiruchirappalli', name: 'Tiruchirappalli International Airport', country: 'India', aliases: ['tiruchirappalli', 'trichy'] },
+  { code: 'IXE', city: 'Mangaluru', name: 'Mangaluru International Airport', country: 'India', aliases: ['mangaluru', 'mangalore'] },
+  { code: 'BBI', city: 'Bhubaneswar', name: 'Biju Patnaik International Airport', country: 'India', aliases: ['bhubaneswar'] },
+  { code: 'PAT', city: 'Patna', name: 'Jay Prakash Narayan Airport', country: 'India', aliases: ['patna'] },
+  { code: 'LKO', city: 'Lucknow', name: 'Chaudhary Charan Singh International Airport', country: 'India', aliases: ['lucknow'] },
+  { code: 'SXR', city: 'Srinagar', name: 'Sheikh ul Alam International Airport', country: 'India', aliases: ['srinagar'] },
+  { code: 'IXC', city: 'Chandigarh', name: 'Shaheed Bhagat Singh International Airport', country: 'India', aliases: ['chandigarh'] },
+  { code: 'BKK', city: 'Bangkok', name: 'Suvarnabhumi Airport', country: 'Thailand', aliases: ['bangkok'] },
+  { code: 'DMK', city: 'Bangkok - Don Mueang', name: 'Don Mueang International Airport', country: 'Thailand', aliases: [] },
+  { code: 'SIN', city: 'Singapore', name: 'Singapore Changi Airport', country: 'Singapore', aliases: ['singapore'] },
+  { code: 'DPS', city: 'Bali - Denpasar', name: 'Ngurah Rai International Airport', country: 'Indonesia', aliases: ['bali', 'denpasar'] },
+  { code: 'KUL', city: 'Kuala Lumpur', name: 'Kuala Lumpur International Airport', country: 'Malaysia', aliases: ['kuala lumpur', 'malaysia'] },
+  { code: 'HAN', city: 'Hanoi', name: 'Noi Bai International Airport', country: 'Vietnam', aliases: ['hanoi'] },
+  { code: 'SGN', city: 'Ho Chi Minh City', name: 'Tan Son Nhat International Airport', country: 'Vietnam', aliases: ['ho chi minh city', 'saigon'] },
+  { code: 'DXB', city: 'Dubai', name: 'Dubai International Airport', country: 'United Arab Emirates', aliases: ['dubai'] },
+  { code: 'HND', city: 'Tokyo - Haneda', name: 'Haneda Airport', country: 'Japan', aliases: [] },
+  { code: 'NRT', city: 'Tokyo - Narita', name: 'Narita International Airport', country: 'Japan', aliases: ['narita'] },
+  { code: 'CDG', city: 'Paris - Charles de Gaulle', name: 'Charles de Gaulle Airport', country: 'France', aliases: ['paris'] },
+  { code: 'ORY', city: 'Paris - Orly', name: 'Paris-Orly Airport', country: 'France', aliases: [] },
+  { code: 'LHR', city: 'London - Heathrow', name: 'Heathrow Airport', country: 'United Kingdom', aliases: ['london'] },
+  { code: 'LGW', city: 'London - Gatwick', name: 'Gatwick Airport', country: 'United Kingdom', aliases: [] },
+  { code: 'FCO', city: 'Rome', name: 'Leonardo da Vinci–Fiumicino Airport', country: 'Italy', aliases: ['rome'] },
+  { code: 'BCN', city: 'Barcelona', name: 'Barcelona-El Prat Airport', country: 'Spain', aliases: ['barcelona'] },
+  { code: 'JFK', city: 'New York - JFK', name: 'John F. Kennedy International Airport', country: 'United States', aliases: [] },
+  { code: 'EWR', city: 'New York - Newark', name: 'Newark Liberty International Airport', country: 'United States', aliases: [] },
+  { code: 'SYD', city: 'Sydney', name: 'Sydney Kingsford Smith Airport', country: 'Australia', aliases: ['sydney'] },
+  { code: 'CMB', city: 'Colombo', name: 'Bandaranaike International Airport', country: 'Sri Lanka', aliases: ['colombo', 'sri lanka'] },
+  { code: 'KTM', city: 'Kathmandu', name: 'Tribhuvan International Airport', country: 'Nepal', aliases: ['kathmandu', 'nepal'] },
+];
+
+function suggestAirport(value: string): string {
+  const query = value.trim().toLowerCase();
+  if (!query) return '';
+
+  const matches = AIRPORTS.filter((airport) =>
+    airport.aliases.some((alias) => query === alias) ||
+    query === airport.city.toLowerCase() ||
+    query === airport.code.toLowerCase()
+  );
+
+  // Never automatically choose between multiple airports for a city.
+  return matches.length === 1 ? matches[0].code : '';
+}
+
+function todayString(): string {
+  const now = new Date();
+  const localDate = new Date(
+    now.getTime() - now.getTimezoneOffset() * 60000
+  );
+  return localDate.toISOString().slice(0, 10);
+}
+
+function buildGoogleFlightsUrl(
+  origin: Airport,
+  destination: Airport,
+  departureDate: string,
+  returnDate: string,
+  tripType: 'round_trip' | 'one_way',
+  adults: number,
+  children: number,
+  cabinClass: string,
+  preferredTime: string,
+  stops: string
+): string {
+  const query = [
+    `${tripType === 'round_trip' ? 'Round trip' : 'One way'} flights`,
+    `from ${origin.code} (${origin.city})`,
+    `to ${destination.code} (${destination.city})`,
+    `departing ${departureDate}`,
+    tripType === 'round_trip' ? `returning ${returnDate}` : '',
+    `${adults} adult${adults === 1 ? '' : 's'}`,
+    children > 0 ? `${children} children` : '',
+    cabinClass.replace('_', ' '),
+    preferredTime !== 'any' ? `${preferredTime} departure` : '',
+    stops === 'direct' ? 'nonstop flights' : stops === 'one_stop' ? 'maximum one stop' : '',
+  ].filter(Boolean).join(' ');
+
+  return `https://www.google.com/travel/flights?q=${encodeURIComponent(query)}`;
 }
 
 export const FlightsSection: React.FC<FlightsSectionProps> = ({
   formData,
   destinationName,
-  originName
+  originName,
 }) => {
   const [tripType, setTripType] = useState<'round_trip' | 'one_way'>('round_trip');
-  const [departureDate, setDepartureDate] = useState<string>(formData.departureDate || new Date().toISOString().split('T')[0]);
-  const [returnDate, setReturnDate] = useState<string>(
-    formData.returnDate ||
-    new Date(Date.now() + (formData.durationDays || 3) * 86400000).toISOString().split('T')[0]
+  const [departureDate, setDepartureDate] = useState(
+    formData.departureDate || todayString()
   );
-  const [adults, setAdults] = useState<number>(Math.max(1, formData.travelers || 2));
-  const [children, setChildren] = useState<number>(0);
-  const [cabinClass, setCabinClass] = useState<'economy' | 'premium_economy' | 'business' | 'first'>('economy');
-  const [preferredTime, setPreferredTime] = useState<'any' | 'morning' | 'afternoon' | 'evening'>('any');
-  const [stops, setStops] = useState<'any' | 'direct' | 'one_stop'>('any');
-
-  // Flight search result state
-  const [flightData, setFlightData] = useState<any>(null);
-  const [isLoading, setIsLoading] = useState(false);
-
-  // Suggested airport hubs
-  const originAirport = getSuggestedAirport(originName);
-  const destAirport = getSuggestedAirport(destinationName);
-
-  const fetchFlightEstimates = async () => {
-    setIsLoading(true);
-    try {
-      const params = new URLSearchParams({
-        origin: originName,
-        destination: destinationName,
-        departureDate,
-        returnDate: tripType === 'round_trip' ? returnDate : '',
-        tripType,
-        adults: adults.toString(),
-        children: children.toString(),
-        cabinClass
-      });
-      const res = await fetch(`/api/flights?${params.toString()}`);
-      if (res.ok) {
-        const data = await res.json();
-        setFlightData(data);
-      }
-    } catch (err) {
-      console.warn('Flight search fetch failed:', err);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  const [returnDate, setReturnDate] = useState(
+    formData.returnDate ||
+      new Date(Date.now() + (formData.durationDays || 3) * 86400000)
+        .toISOString()
+        .slice(0, 10)
+  );
+  const [adults, setAdults] = useState(Math.min(9, Math.max(1, formData.travelers || 2)));
+  const [children, setChildren] = useState(0);
+  const [cabinClass, setCabinClass] = useState('economy');
+  const [preferredTime, setPreferredTime] = useState('any');
+  const [stops, setStops] = useState('any');
+  const [originCode, setOriginCode] = useState(() => suggestAirport(originName));
+  const [destinationCode, setDestinationCode] = useState(() => suggestAirport(destinationName));
 
   useEffect(() => {
-    fetchFlightEstimates();
-  }, [tripType, departureDate, returnDate, adults, children, cabinClass, originName, destinationName]);
+    setOriginCode(suggestAirport(originName));
+  }, [originName]);
 
-  // Construct Google Flights URL
-  const gFlightsQuery = tripType === 'round_trip' && returnDate
-    ? `Flights to ${destinationName} from ${originName} on ${departureDate} through ${returnDate}`
-    : `Flights to ${destinationName} from ${originName} on ${departureDate}`;
-  const directGoogleFlightsUrl = `https://www.google.com/travel/flights?q=${encodeURIComponent(gFlightsQuery)}`;
+  useEffect(() => {
+    setDestinationCode(suggestAirport(destinationName));
+  }, [destinationName]);
 
-  // Construct Skyscanner search URL
-  const directSkyscannerUrl = `https://www.skyscanner.net/transport/flights?query=${encodeURIComponent(`${originName} to ${destinationName}`)}`;
+  useEffect(() => {
+    if (returnDate < departureDate) {
+      setReturnDate(departureDate);
+    }
+  }, [departureDate, returnDate]);
 
-  // Multi-city search helper link
-  const multiCityFlightsUrl = `https://www.google.com/travel/flights`;
+  const originAirport = AIRPORTS.find((airport) => airport.code === originCode);
+  const destinationAirport = AIRPORTS.find((airport) => airport.code === destinationCode);
+
+  const totalPassengers = adults + children;
+  const datesValid =
+    Boolean(departureDate) &&
+    departureDate >= todayString() &&
+    (tripType === 'one_way' ||
+      (Boolean(returnDate) && returnDate >= departureDate));
+
+  const canSearch =
+    Boolean(originAirport) &&
+    Boolean(destinationAirport) &&
+    originCode !== destinationCode &&
+    datesValid &&
+    totalPassengers <= 9;
+
+  const googleFlightsUrl =
+    canSearch && originAirport && destinationAirport
+      ? buildGoogleFlightsUrl(
+          originAirport,
+          destinationAirport,
+          departureDate,
+          returnDate,
+          tripType,
+          adults,
+          children,
+          cabinClass,
+          preferredTime,
+          stops
+        )
+      : '';
+
+  const skyscannerUrl =
+    canSearch && originAirport && destinationAirport
+      ? `https://www.skyscanner.net/transport/flights/${originAirport.code.toLowerCase()}/${destinationAirport.code.toLowerCase()}/${departureDate.replaceAll('-', '').slice(2)}/${tripType === 'round_trip' ? returnDate.replaceAll('-', '').slice(2) : ''}/?adultsv2=${adults}&childrenv2=${children}&cabinclass=${cabinClass}`
+      : '';
+
+  const fieldClass =
+    'w-full p-3 bg-white rounded-xl border border-[#D8C3A5] text-sm text-[#24212B] focus:outline-none focus:ring-2 focus:ring-[#78C9D0]';
+
+  const selectedAirportLabel = (airport: Airport) =>
+    `${airport.code} · ${airport.city} — ${airport.name}`;
 
   return (
-    <div className="bg-white rounded-3xl border border-[#D8C3A5] p-6 sm:p-8 md:p-10 shadow-sm font-sans space-y-6">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-[#D8C3A5]">
+    <section className="bg-white rounded-3xl border border-[#D8C3A5] p-5 sm:p-8 shadow-sm font-sans space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-[#D8C3A5]">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-2xl bg-[#4B294F] text-[#FAF7F0] flex items-center justify-center shadow-xs">
+          <div className="w-11 h-11 rounded-2xl bg-[#4B294F] text-white flex items-center justify-center">
             <Plane className="w-5 h-5 text-[#78C9D0]" />
           </div>
           <div>
-            <div className="text-xs font-bold uppercase tracking-widest text-[#4B294F] mb-0.5">
-              Air Travel & Flight Connectivity
-            </div>
-            <h2 className="text-2xl sm:text-3xl font-serif font-black text-[#4B294F]">
-              Flights & Air Travel Options
+            <p className="text-xs font-bold uppercase tracking-widest text-[#4B294F]">
+              Air Travel
+            </p>
+            <h2 className="text-2xl sm:text-3xl font-black text-[#4B294F]">
+              Search Real Flights
             </h2>
           </div>
         </div>
 
-        {/* Responsible Flight Notice */}
-        <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-[#FAF7F0] border border-[#D8C3A5] text-xs text-[#77717F]">
+        <div className="flex items-center gap-2 rounded-xl bg-[#FAF7F0] border border-[#D8C3A5] px-3 py-2 text-xs text-[#4B294F]">
           <ShieldCheck className="w-4 h-4 text-[#78C9D0] shrink-0" />
-          <span>Live airfares verified through official Google Flights & airline providers</span>
+          <span>Compare live fares on external flight-search sites</span>
         </div>
       </div>
 
-      {/* Flight Search Parameters Form */}
-      <div className="bg-[#FAF7F0] rounded-2xl p-5 border border-[#D8C3A5] space-y-4">
-        {/* Top Control Bar: Trip Type & Cabin Class */}
-        <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-[#D8C3A5]/60">
-          {/* One-way vs Round-trip toggle */}
-          <div className="flex items-center gap-1 p-1 bg-white rounded-xl border border-[#D8C3A5]">
-            <button
-              type="button"
-              onClick={() => setTripType('round_trip')}
-              className={`px-3.5 py-1 text-xs rounded-lg font-bold transition-all cursor-pointer ${
-                tripType === 'round_trip'
-                  ? 'bg-[#4B294F] text-white shadow-xs'
-                  : 'text-[#77717F] hover:text-[#4B294F]'
-              }`}
-            >
-              Round-Trip
-            </button>
-            <button
-              type="button"
-              onClick={() => setTripType('one_way')}
-              className={`px-3.5 py-1 text-xs rounded-lg font-bold transition-all cursor-pointer ${
-                tripType === 'one_way'
-                  ? 'bg-[#4B294F] text-white shadow-xs'
-                  : 'text-[#77717F] hover:text-[#4B294F]'
-              }`}
-            >
-              One-Way
-            </button>
+      <div className="bg-[#FAF7F0] rounded-2xl p-4 sm:p-5 border border-[#D8C3A5] space-y-5">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex gap-1 p-1 bg-white rounded-xl border border-[#D8C3A5]">
+            {(['round_trip', 'one_way'] as const).map((type) => (
+              <button
+                key={type}
+                type="button"
+                onClick={() => setTripType(type)}
+                className={`px-4 py-2 text-xs rounded-lg font-bold transition-colors ${
+                  tripType === type
+                    ? 'bg-[#4B294F] text-white'
+                    : 'text-[#77717F] hover:text-[#4B294F]'
+                }`}
+              >
+                {type === 'round_trip' ? 'Round Trip' : 'One Way'}
+              </button>
+            ))}
           </div>
 
-          {/* Cabin Class Selection */}
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-bold text-[#4B294F]">Class:</span>
+          <label className="flex items-center gap-2 text-xs font-bold text-[#4B294F]">
+            Cabin class
             <select
               value={cabinClass}
-              onChange={(e) => setCabinClass(e.target.value as any)}
-              className="text-xs font-bold bg-white border border-[#D8C3A5] text-[#4B294F] rounded-xl px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#78C9D0]"
+              onChange={(event) => setCabinClass(event.target.value)}
+              className="bg-white border border-[#D8C3A5] rounded-xl px-3 py-2"
             >
               <option value="economy">Economy</option>
               <option value="premium_economy">Premium Economy</option>
-              <option value="business">Business Class</option>
+              <option value="business">Business</option>
               <option value="first">First Class</option>
             </select>
-          </div>
+          </label>
         </div>
 
-        {/* Route & Dates Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {/* Departure City / Airport */}
-          <div className="space-y-1">
-            <label className="text-xs font-bold text-[#4B294F] block">
-              Departure City / Airport
-            </label>
-            <div className="p-3 bg-white rounded-xl border border-[#D8C3A5] text-xs font-medium text-[#24212B]">
-              <div className="font-bold text-[#4B294F]">{originName}</div>
-              {originAirport && (
-                <div className="text-[11px] text-[#78C9D0] font-mono mt-0.5 font-bold">
-                  {originAirport.code} · {originAirport.name}
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Destination City / Airport */}
-          <div className="space-y-1">
-            <label className="text-xs font-bold text-[#4B294F] block">
-              Destination City / Airport
-            </label>
-            <div className="p-3 bg-white rounded-xl border border-[#D8C3A5] text-xs font-medium text-[#24212B]">
-              <div className="font-bold text-[#4B294F]">{destinationName}</div>
-              {destAirport && (
-                <div className="text-[11px] text-[#C2185B] font-mono mt-0.5 font-bold">
-                  {destAirport.code} · {destAirport.name}
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Departure Date */}
-          <div className="space-y-1">
-            <label className="text-xs font-bold text-[#4B294F] flex items-center gap-1">
-              <Calendar className="w-3.5 h-3.5 text-[#78C9D0]" /> Departure Date
-            </label>
-            <input
-              type="date"
-              value={departureDate}
-              onChange={(e) => setDepartureDate(e.target.value)}
-              className="w-full p-2.5 bg-white rounded-xl border border-[#D8C3A5] text-xs font-medium text-[#24212B] focus:outline-none focus:ring-2 focus:ring-[#78C9D0]"
-            />
-          </div>
-
-          {/* Return Date (if round trip) */}
-          <div className="space-y-1">
-            <label className="text-xs font-bold text-[#4B294F] flex items-center gap-1">
-              <Calendar className="w-3.5 h-3.5 text-[#78C9D0]" /> Return Date
-            </label>
-            <input
-              type="date"
-              value={returnDate}
-              disabled={tripType === 'one_way'}
-              onChange={(e) => setReturnDate(e.target.value)}
-              className="w-full p-2.5 bg-white rounded-xl border border-[#D8C3A5] text-xs font-medium text-[#24212B] focus:outline-none focus:ring-2 focus:ring-[#78C9D0] disabled:bg-gray-100 disabled:opacity-50"
-            />
-          </div>
-        </div>
-
-        {/* Travelers & Preference Selectors */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2 border-t border-[#D8C3A5]/40 text-xs">
-          {/* Passenger Counters */}
-          <div className="flex items-center gap-4 bg-white p-3 rounded-xl border border-[#D8C3A5]">
-            <Users className="w-4 h-4 text-[#4B294F] shrink-0" />
-            <div className="flex-1 flex items-center justify-between gap-3">
-              <div>
-                <span className="font-bold text-[#4B294F] block">Adults (12+)</span>
-                <span className="text-[10px] text-[#77717F]">Full seat</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setAdults(Math.max(1, adults - 1))}
-                  className="w-6 h-6 rounded-lg bg-[#EEE8F7] text-[#4B294F] font-bold flex items-center justify-center cursor-pointer hover:bg-[#D8C3A5]"
-                >
-                  -
-                </button>
-                <span className="font-bold text-sm w-4 text-center">{adults}</span>
-                <button
-                  type="button"
-                  onClick={() => setAdults(adults + 1)}
-                  className="w-6 h-6 rounded-lg bg-[#EEE8F7] text-[#4B294F] font-bold flex items-center justify-center cursor-pointer hover:bg-[#D8C3A5]"
-                >
-                  +
-                </button>
-              </div>
-            </div>
-
-            <div className="h-6 w-px bg-[#D8C3A5]/50" />
-
-            <div className="flex-1 flex items-center justify-between gap-3">
-              <div>
-                <span className="font-bold text-[#4B294F] block">Children (2-11)</span>
-                <span className="text-[10px] text-[#77717F]">Discounted</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setChildren(Math.max(0, children - 1))}
-                  className="w-6 h-6 rounded-lg bg-[#EEE8F7] text-[#4B294F] font-bold flex items-center justify-center cursor-pointer hover:bg-[#D8C3A5]"
-                >
-                  -
-                </button>
-                <span className="font-bold text-sm w-4 text-center">{children}</span>
-                <button
-                  type="button"
-                  onClick={() => setChildren(children + 1)}
-                  className="w-6 h-6 rounded-lg bg-[#EEE8F7] text-[#4B294F] font-bold flex items-center justify-center cursor-pointer hover:bg-[#D8C3A5]"
-                >
-                  +
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* Departure Time of Day */}
-          <div className="bg-white p-3 rounded-xl border border-[#D8C3A5] flex items-center justify-between">
-            <span className="font-bold text-[#4B294F] flex items-center gap-1.5">
-              <Clock className="w-3.5 h-3.5 text-[#78C9D0]" /> Departure Time:
-            </span>
-            <select
-              value={preferredTime}
-              onChange={(e) => setPreferredTime(e.target.value as any)}
-              className="bg-transparent text-[#4B294F] font-bold text-xs focus:outline-none"
-            >
-              <option value="any">Flexible / Any</option>
-              <option value="morning">Morning (6 AM - 12 PM)</option>
-              <option value="afternoon">Afternoon (12 PM - 6 PM)</option>
-              <option value="evening">Evening (6 PM - 12 AM)</option>
-            </select>
-          </div>
-
-          {/* Stops Preference */}
-          <div className="bg-white p-3 rounded-xl border border-[#D8C3A5] flex items-center justify-between">
-            <span className="font-bold text-[#4B294F] flex items-center gap-1.5">
-              <ArrowRightLeft className="w-3.5 h-3.5 text-[#78C9D0]" /> Stops:
-            </span>
-            <select
-              value={stops}
-              onChange={(e) => setStops(e.target.value as any)}
-              className="bg-transparent text-[#4B294F] font-bold text-xs focus:outline-none"
-            >
-              <option value="any">Any Stops</option>
-              <option value="direct">Direct Flights Only</option>
-              <option value="one_stop">Up to 1 Stop</option>
-            </select>
-          </div>
-        </div>
-      </div>
-
-      {/* Flight Estimate & Booking Links Banner */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        {/* Estimated Fare Benchmark Card */}
-        <div className="lg:col-span-1 p-5 rounded-2xl bg-[#24212B] text-white flex flex-col justify-between space-y-4">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <div>
-            <div className="flex items-center justify-between text-xs text-[#D8C3A5] font-bold uppercase tracking-wider mb-1">
-              <span>Budget Benchmark</span>
-              <span className="px-2 py-0.5 rounded-full bg-white/10 text-[10px]">
-                {flightData?.isDomestic ? 'Domestic Air' : 'International Air'}
-              </span>
-            </div>
-            <div className="text-3xl font-serif font-black text-white mt-1">
-              {flightData ? `₹${flightData.totalEstimatedFlightCost.toLocaleString('en-IN')}` : 'Calculating...'}
-            </div>
-            <div className="text-xs text-[#D8C3A5] mt-1">
-              Total estimated flight benchmark for {adults} adult{adults > 1 ? 's' : ''}{children > 0 ? ` & ${children} child${children > 1 ? 'ren' : ''}` : ''} ({tripType === 'round_trip' ? 'Round-Trip' : 'One-Way'}, {cabinClass.replace('_', ' ')})
-            </div>
-          </div>
-
-          <div className="pt-3 border-t border-white/15 text-[11px] text-white/70 space-y-1">
-            <div className="flex justify-between">
-              <span>Per Adult Est:</span>
-              <span className="font-bold text-white">₹{flightData?.estimatedFarePerAdult?.toLocaleString('en-IN') || '4,500'}</span>
-            </div>
-            {children > 0 && (
-              <div className="flex justify-between">
-                <span>Per Child Est:</span>
-                <span className="font-bold text-white">₹{flightData?.estimatedFarePerChild?.toLocaleString('en-IN') || '3,375'}</span>
-              </div>
-            )}
-            <div className="text-[10px] text-white/60 italic pt-1">
-              *Approximate guideline for trip budgeting. Actual airline ticket prices fluctuate dynamically.
-            </div>
-          </div>
-        </div>
-
-        {/* Real Live Flight Search Providers */}
-        <div className="lg:col-span-2 p-5 rounded-2xl border border-[#D8C3A5] bg-[#FAF7F0] flex flex-col justify-between space-y-4">
-          <div className="space-y-2">
-            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-[#4B294F]">
-              <Sparkles className="w-4 h-4 text-[#9B72CF]" />
-              <span>Real-Time Live Airline Fares</span>
-            </div>
-            <p className="text-xs text-[#77717F] leading-relaxed">
-              We never fabricate flight numbers, mock seat inventories, or fake availability. Use the authentic search links below to view real-time airline flight schedules, live tariffs, baggage conditions, and proceed with genuine booking.
+            <label htmlFor="flight-origin" className="block text-xs font-bold text-[#4B294F] mb-2">
+              Departure airport
+            </label>
+            <select
+              id="flight-origin"
+              value={originCode}
+              onChange={(event) => setOriginCode(event.target.value)}
+              className={fieldClass}
+            >
+              <option value="">Choose departure airport</option>
+              {AIRPORTS.map((airport) => (
+                <option key={airport.code} value={airport.code}>
+                  {selectedAirportLabel(airport)}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-[#77717F] mt-1">
+              Suggested from: {originName || 'No origin supplied'}
             </p>
           </div>
 
-          {/* Genuine Action Buttons */}
-          <div className="flex flex-col sm:flex-row items-center gap-3 pt-2">
-            <a
-              href={directGoogleFlightsUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex-1 w-full px-5 py-3 rounded-xl bg-[#4B294F] hover:bg-[#371C3A] text-white font-bold text-xs transition-all flex items-center justify-center gap-2 shadow-sm cursor-pointer"
+          <div>
+            <label htmlFor="flight-destination" className="block text-xs font-bold text-[#4B294F] mb-2">
+              Arrival airport
+            </label>
+            <select
+              id="flight-destination"
+              value={destinationCode}
+              onChange={(event) => setDestinationCode(event.target.value)}
+              className={fieldClass}
             >
-              <Plane className="w-4 h-4 text-[#78C9D0]" />
-              <span>Search Real Flights on Google Flights</span>
-              <ExternalLink className="w-3.5 h-3.5 opacity-70" />
-            </a>
-
-            <a
-              href={directSkyscannerUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="px-4 py-3 rounded-xl bg-white hover:bg-[#EEE8F7] border border-[#D8C3A5] text-[#4B294F] font-bold text-xs transition-all flex items-center justify-center gap-2 cursor-pointer w-full sm:w-auto"
-            >
-              <span>Compare on Skyscanner</span>
-              <ExternalLink className="w-3.5 h-3.5 text-[#77717F]" />
-            </a>
-
-            <a
-              href={multiCityFlightsUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="px-3.5 py-3 rounded-xl bg-[#EEE8F7] hover:bg-[#D8C3A5] text-[#4B294F] font-bold text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer w-full sm:w-auto"
-              title="Plan multi-destination or round-the-world route on Google Flights"
-            >
-              <span>Multi-City Route</span>
-              <ExternalLink className="w-3 h-3 text-[#77717F]" />
-            </a>
+              <option value="">Choose arrival airport</option>
+              {AIRPORTS.map((airport) => (
+                <option key={airport.code} value={airport.code}>
+                  {selectedAirportLabel(airport)}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-[#77717F] mt-1">
+              Suggested from: {destinationName || 'No destination supplied'}
+            </p>
           </div>
 
-          {/* Baggage & Transit Guidance */}
-          <div className="p-3 bg-white rounded-xl border border-[#D8C3A5]/60 flex items-start gap-2.5 text-xs text-[#77717F]">
-            <Luggage className="w-4 h-4 text-[#4B294F] shrink-0 mt-0.5" />
-            <div>
-              <strong className="text-[#4B294F]">Baggage & Air Travel Guidelines:</strong> Most economy domestic flights include 15kg checked luggage + 7kg cabin bag. International routes typically allow 25kg–30kg checked baggage. Check visa requirements and transit terminal changes before confirming international connecting tickets.
-            </div>
+          <div>
+            <label htmlFor="flight-departure-date" className="block text-xs font-bold text-[#4B294F] mb-2">
+              <Calendar className="inline w-4 h-4 mr-1" />
+              Departure date
+            </label>
+            <input
+              id="flight-departure-date"
+              type="date"
+              min={todayString()}
+              value={departureDate}
+              onChange={(event) => setDepartureDate(event.target.value)}
+              className={fieldClass}
+            />
+          </div>
+
+          <div>
+            <label htmlFor="flight-return-date" className="block text-xs font-bold text-[#4B294F] mb-2">
+              <Calendar className="inline w-4 h-4 mr-1" />
+              Return date
+            </label>
+            <input
+              id="flight-return-date"
+              type="date"
+              min={departureDate || todayString()}
+              value={returnDate}
+              disabled={tripType === 'one_way'}
+              onChange={(event) => setReturnDate(event.target.value)}
+              className={`${fieldClass} disabled:opacity-50`}
+            />
           </div>
         </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="bg-white rounded-xl border border-[#D8C3A5] p-3">
+            <div className="flex items-center gap-2 text-xs font-bold text-[#4B294F] mb-3">
+              <Users className="w-4 h-4" />
+              Passengers ({totalPassengers}/9)
+            </div>
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-sm text-[#4B294F]">Adults</span>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  aria-label="Remove adult"
+                  disabled={adults <= 1}
+                  onClick={() => setAdults((value) => Math.max(1, value - 1))}
+                  className="w-7 h-7 rounded-lg bg-[#EEE8F7] text-[#4B294F] disabled:opacity-40"
+                >
+                  −
+                </button>
+                <span className="font-bold w-4 text-center">{adults}</span>
+                <button
+                  type="button"
+                  aria-label="Add adult"
+                  disabled={totalPassengers >= 9}
+                  onClick={() => setAdults((value) => value + 1)}
+                  className="w-7 h-7 rounded-lg bg-[#EEE8F7] text-[#4B294F] disabled:opacity-40"
+                >
+                  +
+                </button>
+              </div>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-[#4B294F]">Children</span>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  aria-label="Remove child"
+                  disabled={children <= 0}
+                  onClick={() => setChildren((value) => Math.max(0, value - 1))}
+                  className="w-7 h-7 rounded-lg bg-[#EEE8F7] text-[#4B294F] disabled:opacity-40"
+                >
+                  −
+                </button>
+                <span className="font-bold w-4 text-center">{children}</span>
+                <button
+                  type="button"
+                  aria-label="Add child"
+                  disabled={totalPassengers >= 9}
+                  onClick={() => setChildren((value) => value + 1)}
+                  className="w-7 h-7 rounded-lg bg-[#EEE8F7] text-[#4B294F] disabled:opacity-40"
+                >
+                  +
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <label className="bg-white rounded-xl border border-[#D8C3A5] p-3 flex flex-col gap-2 text-xs font-bold text-[#4B294F]">
+            <span><Clock className="inline w-4 h-4 mr-1" />Departure time</span>
+            <select
+              value={preferredTime}
+              onChange={(event) => setPreferredTime(event.target.value)}
+              className="w-full bg-transparent text-sm font-normal"
+            >
+              <option value="any">Any time</option>
+              <option value="morning">Morning</option>
+              <option value="afternoon">Afternoon</option>
+              <option value="evening">Evening</option>
+            </select>
+          </label>
+
+          <label className="bg-white rounded-xl border border-[#D8C3A5] p-3 flex flex-col gap-2 text-xs font-bold text-[#4B294F]">
+            <span><ArrowRightLeft className="inline w-4 h-4 mr-1" />Stops</span>
+            <select
+              value={stops}
+              onChange={(event) => setStops(event.target.value)}
+              className="w-full bg-transparent text-sm font-normal"
+            >
+              <option value="any">Any stops</option>
+              <option value="direct">Nonstop only</option>
+              <option value="one_stop">Maximum one stop</option>
+            </select>
+          </label>
+        </div>
+
+        {originCode && destinationCode && originCode === destinationCode && (
+          <p role="alert" className="text-sm text-red-700 flex items-start gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+            Select different departure and arrival airports.
+          </p>
+        )}
+
+        {(!originAirport || !destinationAirport) && (
+          <p className="text-sm text-[#77717F] flex items-start gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-[#9B72CF]" />
+            Choose both airports from the lists. If your city is not listed, this curated list does not support it yet; no airport will be guessed.
+          </p>
+        )}
+
+        {!datesValid && (
+          <p role="alert" className="text-sm text-red-700">
+            Select a departure date today or later and a valid return date.
+          </p>
+        )}
       </div>
-    </div>
+
+      <div className="rounded-2xl border border-[#D8C3A5] bg-[#FAF7F0] p-5 sm:p-6 space-y-4">
+        <div className="flex items-center gap-2 text-[#4B294F]">
+          <Plane className="w-5 h-5 text-[#9B72CF]" />
+          <h3 className="text-lg font-bold">Compare real flight prices</h3>
+        </div>
+
+        <p className="text-sm text-[#77717F] leading-relaxed">
+          SAFARNAMA AI does not currently retrieve live airline fares itself.
+          Open a flight-search provider to see available flights and prices for
+          your selected airports, dates, passengers, and travel class. Compare
+          the total price, baggage fees, stopovers, and cancellation rules before
+          booking.
+        </p>
+
+        {canSearch ? (
+          <div className="flex flex-col sm:flex-row gap-3">
+            <a
+              href={googleFlightsUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex-1 px-5 py-3 rounded-xl bg-[#4B294F] hover:bg-[#371C3A] text-white font-bold text-sm transition-colors flex items-center justify-center gap-2"
+            >
+              <Plane className="w-4 h-4 text-[#78C9D0]" />
+              Search real flights
+              <ExternalLink className="w-4 h-4" />
+            </a>
+            <a
+              href={skyscannerUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-5 py-3 rounded-xl bg-white hover:bg-[#EEE8F7] border border-[#D8C3A5] text-[#4B294F] font-bold text-sm transition-colors flex items-center justify-center gap-2"
+            >
+              Compare on Skyscanner
+              <ExternalLink className="w-4 h-4" />
+            </a>
+          </div>
+        ) : (
+          <button
+            type="button"
+            disabled
+            className="w-full px-5 py-3 rounded-xl bg-[#4B294F]/40 text-white font-bold text-sm cursor-not-allowed"
+          >
+            Select valid airports and travel dates to search
+          </button>
+        )}
+
+        <div className="border-t border-[#D8C3A5] pt-4 flex items-start gap-2 text-xs text-[#77717F]">
+          <Luggage className="w-4 h-4 text-[#4B294F] shrink-0 mt-0.5" />
+          <p>
+            <strong className="text-[#4B294F]">Before booking:</strong> baggage
+            allowance, ticket prices, transit requirements, and cancellation
+            policies depend on the airline and fare. Confirm them on the airline
+            or booking provider's website.
+          </p>
+        </div>
+      </div>
+    </section>
   );
 };
