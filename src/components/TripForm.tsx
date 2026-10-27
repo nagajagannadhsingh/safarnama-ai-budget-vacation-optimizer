@@ -1,6 +1,15 @@
 
 import React, { useEffect, useState } from 'react';
-import { Compass, MapPin, CalendarDays, Users, Wallet, Sparkles, LoaderCircle } from 'lucide-react';
+import {
+  Compass,
+  MapPin,
+  CalendarDays,
+  Users,
+  Wallet,
+  Sparkles,
+  LoaderCircle,
+  LocateFixed,
+} from 'lucide-react';
 import type { TripFormData } from '../types';
 
 interface TripFormProps {
@@ -37,7 +46,9 @@ export const TripForm: React.FC<TripFormProps> = ({
   onLoadSample,
 }) => {
   const [origin, setOrigin] = useState(initialData?.origin ?? '');
-  const [destination, setDestination] = useState(initialData?.destination ?? '');
+  const [destination, setDestination] = useState(
+    initialData?.destination ?? '',
+  );
   const [totalBudget, setTotalBudget] = useState(
     String(initialData?.totalBudget ?? 15000),
   );
@@ -71,6 +82,11 @@ export const TripForm: React.FC<TripFormProps> = ({
   const [specialPreferences, setSpecialPreferences] = useState(
     initialData?.specialPreferences ?? '',
   );
+  const [originCoords, setOriginCoords] = useState<
+    TripFormData['originCoords'] | undefined
+  >(initialData?.originCoords);
+  const [locationMessage, setLocationMessage] = useState('');
+  const [locationLoading, setLocationLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   useEffect(() => {
@@ -90,7 +106,63 @@ export const TripForm: React.FC<TripFormProps> = ({
     setTravelStyle(initialData.travelStyle ?? 'budget');
     setInterests(initialData.interests ?? ['nature', 'beaches']);
     setSpecialPreferences(initialData.specialPreferences ?? '');
+    setOriginCoords(initialData.originCoords);
   }, [initialData]);
+
+  const useCurrentLocation = () => {
+    setLocationMessage('');
+
+    if (!navigator.geolocation) {
+      setLocationMessage(
+        'Geolocation is not supported by this browser. Enter your starting location manually.',
+      );
+      return;
+    }
+
+    setLocationLoading(true);
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const latitude = position.coords.latitude;
+        const longitude = position.coords.longitude;
+
+        setOriginCoords({
+          lat: latitude,
+          lon: longitude,
+        } as NonNullable<TripFormData['originCoords']>);
+
+        setOrigin(
+          `Current location (${latitude.toFixed(5)}, ${longitude.toFixed(5)})`,
+        );
+
+        setLocationMessage(
+          'Location captured. Coordinates will be included with your trip.',
+        );
+        setErrors((current) => ({ ...current, origin: '' }));
+        setLocationLoading(false);
+      },
+      (error) => {
+        let message =
+          'Could not retrieve your location. Please enter it manually.';
+
+        if (error.code === error.PERMISSION_DENIED) {
+          message =
+            'Location permission was denied. Allow location access in your browser or enter your starting location manually.';
+        } else if (error.code === error.TIMEOUT) {
+          message =
+            'Location request timed out. Try again or enter your location manually.';
+        }
+
+        setLocationMessage(message);
+        setLocationLoading(false);
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 15000,
+        maximumAge: 60000,
+      },
+    );
+  };
 
   const toggleInterest = (interest: string) => {
     setInterests((current) =>
@@ -155,16 +227,14 @@ export const TripForm: React.FC<TripFormProps> = ({
 
     setErrors(nextErrors);
 
-    if (Object.keys(nextErrors).length > 0) return;
+    if (Object.values(nextErrors).some(Boolean)) return;
 
-    const country =
-      initialData?.country ??
-      (destination.toLowerCase().includes('india') ? 'India' : undefined);
+    const country = initialData?.country;
 
     const formData: TripFormData = {
       origin: origin.trim(),
       destination: destination.trim(),
-      country,
+      ...(country ? { country } : {}),
       currency: initialData?.currency ?? 'INR',
       totalBudget: budgetValue,
       travelers: travelersValue,
@@ -179,9 +249,7 @@ export const TripForm: React.FC<TripFormProps> = ({
       ...(initialData?.isInternational !== undefined
         ? { isInternational: initialData.isInternational }
         : {}),
-      ...(initialData?.originCoords
-        ? { originCoords: initialData.originCoords }
-        : {}),
+      ...(originCoords ? { originCoords } : {}),
       ...(initialData?.destinationCoords
         ? { destinationCoords: initialData.destinationCoords }
         : {}),
@@ -224,6 +292,7 @@ export const TripForm: React.FC<TripFormProps> = ({
             >
               Starting location
             </label>
+
             <div className="relative">
               <MapPin className="absolute left-3 top-5 h-4 w-4 text-[#9B72CF]" />
               <input
@@ -231,13 +300,40 @@ export const TripForm: React.FC<TripFormProps> = ({
                 type="text"
                 autoComplete="off"
                 value={origin}
-                onChange={(event) => setOrigin(event.target.value)}
+                onChange={(event) => {
+                  setOrigin(event.target.value);
+                  setOriginCoords(undefined);
+                  setLocationMessage('');
+                }}
                 placeholder="e.g. Hyderabad, India"
                 className={`${inputClass} pl-10`}
                 aria-invalid={Boolean(errors.origin)}
                 required
               />
             </div>
+
+            <button
+              type="button"
+              onClick={useCurrentLocation}
+              disabled={locationLoading || isLoading}
+              className="mt-2 inline-flex items-center gap-2 text-sm font-semibold text-[#4B294F] transition hover:text-[#9B72CF] disabled:opacity-60"
+            >
+              {locationLoading ? (
+                <LoaderCircle className="h-4 w-4 animate-spin" />
+              ) : (
+                <LocateFixed className="h-4 w-4" />
+              )}
+              {locationLoading
+                ? 'Getting your location…'
+                : 'Use My Current Location'}
+            </button>
+
+            {locationMessage && (
+              <p role="status" className="mt-1 text-xs text-[#77717F]">
+                {locationMessage}
+              </p>
+            )}
+
             {errors.origin && (
               <p className="mt-1 text-xs text-rose-600">{errors.origin}</p>
             )}
@@ -279,9 +375,7 @@ export const TripForm: React.FC<TripFormProps> = ({
               Total trip budget (INR)
             </label>
             <div className="relative">
-              <span className="absolute left-3 top-[21px] text-sm font-bold text-[#9B72CF]">
-                ₹
-              </span>
+              <Wallet className="absolute left-3 top-5 h-4 w-4 text-[#9B72CF]" />
               <input
                 id="trip-budget"
                 type="number"
@@ -297,13 +391,13 @@ export const TripForm: React.FC<TripFormProps> = ({
                   }));
                 }}
                 placeholder="e.g. 15000"
-                className={`${inputClass} pl-9`}
+                className={`${inputClass} pl-10`}
                 aria-invalid={Boolean(errors.totalBudget)}
                 required
               />
             </div>
             <p className="mt-1 text-xs text-[#77717F]">
-              Enter any positive amount: ₹5,000, ₹10,000, ₹15,000, etc.
+              Enter any positive amount, such as ₹5,000 or ₹15,000.
             </p>
             {errors.totalBudget && (
               <p className="mt-1 text-xs text-rose-600">
@@ -497,6 +591,7 @@ export const TripForm: React.FC<TripFormProps> = ({
           <div className="mt-3 flex flex-wrap gap-2">
             {INTEREST_OPTIONS.map((interest) => {
               const selected = interests.includes(interest);
+
               return (
                 <button
                   key={interest}
@@ -539,7 +634,7 @@ export const TripForm: React.FC<TripFormProps> = ({
         <div className="flex flex-col gap-3 border-t border-[#D8C3A5]/60 pt-6 sm:flex-row">
           <button
             type="submit"
-            disabled={isLoading}
+            disabled={isLoading || locationLoading}
             className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-[#4B294F] px-6 py-4 text-sm font-bold text-white transition hover:bg-[#613765] disabled:cursor-not-allowed disabled:opacity-60"
           >
             {isLoading ? (
