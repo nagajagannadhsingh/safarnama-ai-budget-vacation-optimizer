@@ -1,5 +1,5 @@
-import { enableCors, sendJson, sendError, getQueryParam } from '../src/services/serverlessUtils.ts';
-import { getPlacesForCoordinates } from '../src/services/placesBackendService.ts';
+import { enableCors, sendJson, sendError, getQueryParam } from '../src/services/serverlessUtils.js';
+import { getPlacesForCoordinates } from '../src/services/placesBackendService.js';
 
 export default async function handler(req: any, res: any) {
   if (enableCors(req, res)) return;
