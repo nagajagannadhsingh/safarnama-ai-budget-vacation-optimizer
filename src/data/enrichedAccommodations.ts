@@ -269,3 +269,16 @@ export function sortAccommodationsByRating(
     return ratingB - ratingA;
   });
 }
+
+/**
+ * Keeps genuine accommodation records unchanged.
+ * No fake hotel names, photos, ratings, or prices are added.
+ */
+export function enrichAccommodationsList(
+  accommodations: AccommodationItem[],
+  _destinationName: string,
+  _tier: "lowest" | "balanced" | "comfort"
+): AccommodationItem[] {
+  return [...accommodations];
+}
+
