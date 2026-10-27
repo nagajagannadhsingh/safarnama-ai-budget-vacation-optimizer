@@ -1,5 +1,5 @@
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Compass,
   MapPin,
@@ -18,6 +18,11 @@ interface TripFormProps {
   loadingStepText: string;
   initialData?: Partial<TripFormData>;
   onLoadSample: () => void;
+}
+
+interface DestinationSuggestion {
+  name: string;
+  displayName: string;
 }
 
 const COLORS = {
@@ -124,10 +129,25 @@ export const TripForm: React.FC<TripFormProps> = ({
   const [originCoords, setOriginCoords] = useState<
     TripFormData['originCoords'] | undefined
   >(initialData?.originCoords);
+
   const [locationMessage, setLocationMessage] = useState('');
   const [locationLoading, setLocationLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
+  // Destination autocomplete state.
+  const [destinationSuggestions, setDestinationSuggestions] = useState<
+    DestinationSuggestion[]
+  >([]);
+  const [destinationSuggestionsOpen, setDestinationSuggestionsOpen] =
+    useState(false);
+  const [destinationSearchLoading, setDestinationSearchLoading] =
+    useState(false);
+  const [destinationSearchError, setDestinationSearchError] = useState('');
+
+  const destinationRequestRef = useRef<AbortController | null>(null);
+  const destinationWrapperRef = useRef<HTMLDivElement | null>(null);
+
+  // Restore form values when a different saved or sample trip is loaded.
   useEffect(() => {
     if (!initialData) return;
 
@@ -147,10 +167,151 @@ export const TripForm: React.FC<TripFormProps> = ({
     setSpecialPreferences(initialData.specialPreferences ?? '');
     setOriginCoords(initialData.originCoords);
     setErrors({});
+    setDestinationSuggestions([]);
+    setDestinationSuggestionsOpen(false);
+    setDestinationSearchError('');
   }, [initialData]);
+
+  // Close suggestions when clicking outside the destination field.
+  useEffect(() => {
+    const handleOutsideClick = (event: MouseEvent) => {
+      if (
+        destinationWrapperRef.current &&
+        !destinationWrapperRef.current.contains(event.target as Node)
+      ) {
+        setDestinationSuggestionsOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleOutsideClick);
+
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick);
+    };
+  }, []);
+
+  // Search real geographic results only while the user is typing.
+  useEffect(() => {
+    const query = destination.trim();
+
+    destinationRequestRef.current?.abort();
+
+    if (query.length < 2 || !destinationSuggestionsOpen) {
+      setDestinationSuggestions([]);
+      setDestinationSearchLoading(false);
+      setDestinationSearchError('');
+      return;
+    }
+
+    const controller = new AbortController();
+    destinationRequestRef.current = controller;
+
+    const timeout = window.setTimeout(async () => {
+      setDestinationSearchLoading(true);
+      setDestinationSearchError('');
+
+      try {
+        const url = new URL(
+          'https://nominatim.openstreetmap.org/search',
+        );
+
+        url.searchParams.set('format', 'jsonv2');
+        url.searchParams.set('q', query);
+        url.searchParams.set('limit', '6');
+        url.searchParams.set('addressdetails', '1');
+
+        const response = await fetch(url.toString(), {
+          headers: { Accept: 'application/json' },
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          throw new Error(`Destination search failed: ${response.status}`);
+        }
+
+        const data: Array<{
+          name?: string;
+          display_name?: string;
+          address?: {
+            city?: string;
+            town?: string;
+            village?: string;
+            municipality?: string;
+            county?: string;
+            state?: string;
+            country?: string;
+          };
+        }> = await response.json();
+
+        const unique = new Map<string, DestinationSuggestion>();
+
+        for (const item of data) {
+          const address = item.address ?? {};
+
+          const placeName =
+            address.city ||
+            address.town ||
+            address.village ||
+            address.municipality ||
+            item.name ||
+            item.display_name?.split(',')[0] ||
+            '';
+
+          const displayName = item.display_name ?? placeName;
+          const normalizedDisplay = displayName.trim();
+
+          if (!placeName.trim() || !normalizedDisplay) continue;
+
+          const key = normalizedDisplay.toLowerCase();
+
+          if (!unique.has(key)) {
+            unique.set(key, {
+              name: placeName.trim(),
+              displayName: normalizedDisplay,
+            });
+          }
+        }
+
+        if (!controller.signal.aborted) {
+          setDestinationSuggestions([...unique.values()]);
+        }
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          console.error('Destination autocomplete failed:', error);
+          setDestinationSuggestions([]);
+          setDestinationSearchError(
+            'Could not load suggestions. You can still enter a destination manually.',
+          );
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setDestinationSearchLoading(false);
+        }
+      }
+    }, 500);
+
+    return () => {
+      window.clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [destination, destinationSuggestionsOpen]);
+
+  useEffect(() => {
+    return () => {
+      destinationRequestRef.current?.abort();
+    };
+  }, []);
 
   const setFieldError = (field: string) => {
     setErrors((current) => ({ ...current, [field]: '' }));
+  };
+
+  const selectDestination = (place: DestinationSuggestion) => {
+    setDestination(place.name);
+    setDestinationSuggestions([]);
+    setDestinationSuggestionsOpen(false);
+    setDestinationSearchError('');
+    setFieldError('destination');
   };
 
   const useCurrentLocation = () => {
@@ -222,8 +383,6 @@ export const TripForm: React.FC<TripFormProps> = ({
           }
 
           setOrigin(placeName);
-
-          // Assumes src/types.ts defines originCoords as { lat, lon }.
           setOriginCoords({
             lat: latitude,
             lon: longitude,
@@ -247,9 +406,7 @@ export const TripForm: React.FC<TripFormProps> = ({
             'Location permission was denied. Allow location access in your browser settings or enter your location manually.',
           );
         } else if (error.code === error.TIMEOUT) {
-          setLocationMessage(
-            'Location request timed out. Please try again.',
-          );
+          setLocationMessage('Location request timed out. Please try again.');
         } else {
           setLocationMessage(
             'Unable to detect your location. Please enter it manually.',
@@ -306,7 +463,6 @@ export const TripForm: React.FC<TripFormProps> = ({
       nextErrors.destination = 'Enter your destination.';
     }
 
-    // No fixed maximum: any finite positive budget is accepted.
     if (
       !budgetText ||
       !Number.isFinite(budgetValue) ||
@@ -380,6 +536,7 @@ export const TripForm: React.FC<TripFormProps> = ({
         : {}),
     };
 
+    setDestinationSuggestionsOpen(false);
     onSubmit(formData);
   };
 
@@ -398,7 +555,10 @@ export const TripForm: React.FC<TripFormProps> = ({
       <div className="mb-7">
         <h2
           className="text-2xl font-bold sm:text-3xl"
-          style={{ color: COLORS.plum, fontFamily: 'Montserrat, sans-serif' }}
+          style={{
+            color: COLORS.plum,
+            fontFamily: 'Montserrat, sans-serif',
+          }}
         >
           Plan your trip
         </h2>
@@ -414,7 +574,7 @@ export const TripForm: React.FC<TripFormProps> = ({
           <div className="min-w-0">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <label htmlFor="trip-origin" className={labelClass}>
-                1. Starting location *
+                1. Starting location (origin in India) *
               </label>
 
               <button
@@ -434,7 +594,10 @@ export const TripForm: React.FC<TripFormProps> = ({
             </div>
 
             <div className="relative">
-              <MapPin className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2" style={{ color: COLORS.muted }} />
+              <MapPin
+                className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2"
+                style={{ color: COLORS.muted }}
+              />
               <input
                 id="trip-origin"
                 type="text"
@@ -453,7 +616,11 @@ export const TripForm: React.FC<TripFormProps> = ({
             </div>
 
             {locationMessage && (
-              <p role="status" className="mt-2 text-xs" style={{ color: COLORS.muted }}>
+              <p
+                role="status"
+                className="mt-2 text-xs"
+                style={{ color: COLORS.muted }}
+              >
                 {locationMessage}
               </p>
             )}
@@ -463,7 +630,10 @@ export const TripForm: React.FC<TripFormProps> = ({
             )}
 
             <div className="mt-3 flex flex-wrap items-center gap-2">
-              <span className="text-[11px] font-bold uppercase tracking-wide" style={{ color: COLORS.muted }}>
+              <span
+                className="text-[11px] font-bold uppercase tracking-wide"
+                style={{ color: COLORS.muted }}
+              >
                 Popular:
               </span>
               {ORIGIN_SUGGESTIONS.map((place) => (
@@ -486,42 +656,130 @@ export const TripForm: React.FC<TripFormProps> = ({
 
           <div className="min-w-0">
             <label htmlFor="trip-destination" className={labelClass}>
-              2. Destination *
+              2. Destination (city, temple or region in India) *
             </label>
 
-            <div className="relative">
-              <Compass className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2" style={{ color: COLORS.muted }} />
+            <div className="relative" ref={destinationWrapperRef}>
+              <Compass
+                className="absolute left-4 top-1/2 z-10 h-5 w-5 -translate-y-1/2"
+                style={{ color: COLORS.muted }}
+              />
+
               <input
                 id="trip-destination"
                 type="text"
                 value={destination}
+                autoComplete="off"
+                onFocus={() => {
+                  if (destination.trim().length >= 2) {
+                    setDestinationSuggestionsOpen(true);
+                  }
+                }}
                 onChange={(event) => {
                   setDestination(event.target.value);
+                  setDestinationSuggestionsOpen(true);
                   setFieldError('destination');
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === 'Escape') {
+                    setDestinationSuggestionsOpen(false);
+                    setDestinationSuggestions([]);
+                  }
                 }}
                 placeholder="Enter city, region, or country"
                 className={`${inputClass} pl-12`}
                 aria-invalid={Boolean(errors.destination)}
+                aria-autocomplete="list"
+                aria-expanded={
+                  destinationSuggestionsOpen &&
+                  destinationSuggestions.length > 0
+                }
                 required
               />
+
+              {destinationSuggestionsOpen &&
+                destination.trim().length >= 2 && (
+                  <div
+                    className="absolute left-0 right-0 top-full z-50 mt-2 max-h-64 overflow-y-auto rounded-2xl border bg-white shadow-xl"
+                    style={{ borderColor: COLORS.sand }}
+                    role="listbox"
+                    aria-label="Destination suggestions"
+                  >
+                    {destinationSearchLoading ? (
+                      <div
+                        className="flex items-center gap-2 px-4 py-3 text-sm"
+                        style={{ color: COLORS.muted }}
+                      >
+                        <LoaderCircle className="h-4 w-4 animate-spin" />
+                        Searching destinations…
+                      </div>
+                    ) : destinationSuggestions.length > 0 ? (
+                      destinationSuggestions.map((place, index) => (
+                        <button
+                          key={`${place.displayName}-${index}`}
+                          type="button"
+                          role="option"
+                          aria-selected={false}
+                          onClick={() => selectDestination(place)}
+                          className="flex w-full items-start gap-3 px-4 py-3 text-left transition hover:bg-[#EEE6F5] focus:bg-[#EEE6F5] focus:outline-none"
+                        >
+                          <MapPin
+                            className="mt-0.5 h-4 w-4 shrink-0"
+                            style={{ color: COLORS.orchid }}
+                          />
+
+                          <span className="min-w-0">
+                            <span
+                              className="block text-sm font-semibold"
+                              style={{ color: COLORS.plum }}
+                            >
+                              {place.name}
+                            </span>
+                            <span
+                              className="mt-0.5 block text-xs"
+                              style={{ color: COLORS.muted }}
+                            >
+                              {place.displayName}
+                            </span>
+                          </span>
+                        </button>
+                      ))
+                    ) : (
+                      <div
+                        className="px-4 py-3 text-sm"
+                        style={{ color: COLORS.muted }}
+                      >
+                        {destinationSearchError ||
+                          'No matching destinations found. Try another spelling.'}
+                      </div>
+                    )}
+                  </div>
+                )}
             </div>
 
             {errors.destination && (
-              <p className="mt-1 text-xs text-rose-600">{errors.destination}</p>
+              <p className="mt-1 text-xs text-rose-600">
+                {errors.destination}
+              </p>
             )}
 
             <div className="mt-3 flex flex-wrap items-center gap-2">
-              <span className="text-[11px] font-bold uppercase tracking-wide" style={{ color: COLORS.muted }}>
+              <span
+                className="text-[11px] font-bold uppercase tracking-wide"
+                style={{ color: COLORS.muted }}
+              >
                 Popular:
               </span>
               {DESTINATION_SUGGESTIONS.map((place) => (
                 <button
                   key={place}
                   type="button"
-                  onClick={() => {
-                    setDestination(place);
-                    setFieldError('destination');
-                  }}
+                  onClick={() =>
+                    selectDestination({
+                      name: place,
+                      displayName: place,
+                    })
+                  }
                   className={suggestionClass}
                 >
                   {place}
@@ -538,7 +796,10 @@ export const TripForm: React.FC<TripFormProps> = ({
               3. Total trip budget (INR ₹) *
             </label>
             <div className="relative">
-              <Wallet className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2" style={{ color: COLORS.muted }} />
+              <Wallet
+                className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2"
+                style={{ color: COLORS.muted }}
+              />
               <input
                 id="trip-budget"
                 type="number"
@@ -572,12 +833,11 @@ export const TripForm: React.FC<TripFormProps> = ({
                 </button>
               ))}
             </div>
-            <p className="mt-2 text-xs" style={{ color: COLORS.muted }}>
-              You can enter any positive amount, not only the suggested values.
-            </p>
 
             {errors.totalBudget && (
-              <p className="mt-1 text-xs text-rose-600">{errors.totalBudget}</p>
+              <p className="mt-1 text-xs text-rose-600">
+                {errors.totalBudget}
+              </p>
             )}
           </div>
 
@@ -586,7 +846,10 @@ export const TripForm: React.FC<TripFormProps> = ({
               4. Number of travelers *
             </label>
             <div className="relative">
-              <Users className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2" style={{ color: COLORS.muted }} />
+              <Users
+                className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2"
+                style={{ color: COLORS.muted }}
+              />
               <input
                 id="trip-travelers"
                 type="number"
@@ -614,7 +877,8 @@ export const TripForm: React.FC<TripFormProps> = ({
                 −
               </button>
               <span className="text-sm" style={{ color: COLORS.muted }}>
-                {travelers || '0'} {Number(travelers) === 1 ? 'traveler' : 'travelers'}
+                {travelers || '0'}{' '}
+                {Number(travelers) === 1 ? 'traveler' : 'travelers'}
               </span>
               <button
                 type="button"
@@ -628,7 +892,9 @@ export const TripForm: React.FC<TripFormProps> = ({
             </div>
 
             {errors.travelers && (
-              <p className="mt-1 text-xs text-rose-600">{errors.travelers}</p>
+              <p className="mt-1 text-xs text-rose-600">
+                {errors.travelers}
+              </p>
             )}
           </div>
 
@@ -637,7 +903,10 @@ export const TripForm: React.FC<TripFormProps> = ({
               5. Trip duration (days) *
             </label>
             <div className="relative">
-              <CalendarDays className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2" style={{ color: COLORS.muted }} />
+              <CalendarDays
+                className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2"
+                style={{ color: COLORS.muted }}
+              />
               <input
                 id="trip-duration"
                 type="number"
@@ -683,7 +952,9 @@ export const TripForm: React.FC<TripFormProps> = ({
             </div>
 
             {errors.durationDays && (
-              <p className="mt-1 text-xs text-rose-600">{errors.durationDays}</p>
+              <p className="mt-1 text-xs text-rose-600">
+                {errors.durationDays}
+              </p>
             )}
           </div>
         </div>
@@ -706,7 +977,9 @@ export const TripForm: React.FC<TripFormProps> = ({
               required
             />
             {errors.departureDate && (
-              <p className="mt-1 text-xs text-rose-600">{errors.departureDate}</p>
+              <p className="mt-1 text-xs text-rose-600">
+                {errors.departureDate}
+              </p>
             )}
           </div>
 
@@ -727,7 +1000,9 @@ export const TripForm: React.FC<TripFormProps> = ({
               aria-invalid={Boolean(errors.returnDate)}
             />
             {errors.returnDate && (
-              <p className="mt-1 text-xs text-rose-600">{errors.returnDate}</p>
+              <p className="mt-1 text-xs text-rose-600">
+                {errors.returnDate}
+              </p>
             )}
           </div>
 
