@@ -202,6 +202,62 @@ function checkOfflineVerifiedCatalogue(query: string): GeocodeResultItem[] | nul
 }
 
 /**
+ * Optional Adapter: LocationIQ / Geocoding API (if API Key provided)
+ */
+async function queryLocationIqProvider(query: string, timeoutMs = 2500): Promise<GeocodeResultItem[]> {
+  const apiKey = (
+    (typeof process !== 'undefined' && (process.env?.LOCATIONIQ_API_KEY || process.env?.GEOCODING_API_KEY)) ||
+    ''
+  ).trim();
+  if (!apiKey) return [];
+
+  const url = `https://us1.locationiq.com/v1/search?key=${encodeURIComponent(apiKey)}&q=${encodeURIComponent(query)}&format=json&limit=5`;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const res = await activeFetch(url, {
+      headers: { 'Accept': 'application/json' },
+      signal: controller.signal
+    });
+    clearTimeout(timer);
+    if (!res.ok) return [];
+    const data: any = await res.json();
+    if (!Array.isArray(data) || data.length === 0) return [];
+
+    const items: GeocodeResultItem[] = [];
+    for (const item of data) {
+      const lat = parseFloat(item.lat);
+      const lon = parseFloat(item.lon);
+      if (!isValidCoordinate(lat, lon)) continue;
+      const inIndia = isCoordinateInIndia(lat, lon);
+      items.push({
+        place_id: `liq_${item.place_id || `${lat}_${lon}`}`,
+        osm_id: item.osm_id,
+        lat: lat.toString(),
+        lon: lon.toString(),
+        latitude: lat,
+        longitude: lon,
+        display_name: item.display_name || query,
+        name: item.display_name ? item.display_name.split(',')[0].trim() : query,
+        city: item.address?.city || item.address?.town || undefined,
+        state: item.address?.state || undefined,
+        country: inIndia ? 'India' : (item.address?.country || 'International'),
+        country_code: item.address?.country_code || (inIndia ? 'in' : undefined),
+        is_india: inIndia,
+        type: item.type || 'location',
+        importance: parseFloat(item.importance) || 0.9,
+        provider: 'custom_provider'
+      });
+    }
+    return items;
+  } catch {
+    clearTimeout(timer);
+    return [];
+  }
+}
+
+/**
  * Adapter 1: Photon Geocoding API by Komoot
  * High performance, generous quota, no datacenter IP blocks, supports full addresses, POIs, temples, accents.
  */
@@ -476,6 +532,19 @@ export async function resolveGeocodeQuery(rawQuery: string): Promise<GeocodeServ
       results: offlineMatch,
       count: offlineMatch.length,
       provider: 'verified_catalogue'
+    };
+  }
+
+  // 3b. Optional API Key Provider (LocationIQ / Custom geocoder)
+  const locationIqResults = await queryLocationIqProvider(query, 2500);
+  if (locationIqResults.length > 0) {
+    setCache(cacheKey, locationIqResults, 'locationiq');
+    return {
+      source: 'locationiq',
+      status: 200,
+      results: locationIqResults,
+      count: locationIqResults.length,
+      provider: 'custom_provider'
     };
   }
 

@@ -16,8 +16,16 @@ export function generateRequestId(): string {
 }
 
 export function enableCors(req: any, res: any): boolean {
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  if (!res || res.headersSent) return false;
+
+  const origin = req.headers?.origin || req.headers?.Origin;
+  if (origin) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+  } else {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+  }
+
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
   res.setHeader(
     'Access-Control-Allow-Headers',
@@ -25,7 +33,11 @@ export function enableCors(req: any, res: any): boolean {
   );
 
   if (req.method === 'OPTIONS') {
-    res.statusCode = 200;
+    if (typeof res.status === 'function') {
+      res.status(200);
+    } else {
+      res.statusCode = 200;
+    }
     res.end();
     return true; // Request handled
   }
@@ -33,21 +45,43 @@ export function enableCors(req: any, res: any): boolean {
 }
 
 export function sendJson(res: any, statusCode: number, data: any, requestId?: string): void {
+  if (!res || res.writableEnded) return;
   const reqId = requestId || generateRequestId();
-  res.statusCode = statusCode;
-  res.setHeader('Content-Type', 'application/json; charset=utf-8');
-  res.setHeader('X-Request-Id', reqId);
-  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+
+  try {
+    if (typeof res.status === 'function') {
+      res.status(statusCode);
+    } else {
+      res.statusCode = statusCode;
+    }
+
+    if (!res.headersSent) {
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.setHeader('X-Request-Id', reqId);
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    }
+  } catch (err) {
+    console.warn('[sendJson] Non-fatal header setup warning:', err);
+  }
 
   const payload = {
     ...data,
     requestId: reqId
   };
 
-  if (typeof res.json === 'function') {
-    res.json(payload);
-  } else {
-    res.end(JSON.stringify(payload));
+  try {
+    if (typeof res.json === 'function') {
+      res.json(payload);
+    } else {
+      res.end(JSON.stringify(payload));
+    }
+  } catch (err) {
+    console.error('[sendJson] Body transmission error:', err);
+    if (!res.writableEnded) {
+      try {
+        res.end(JSON.stringify(payload));
+      } catch {}
+    }
   }
 }
 
@@ -59,7 +93,7 @@ export function sendError(
   extra?: Record<string, any>
 ): void {
   const reqId = generateRequestId();
-  const safeMessage = message.replace(/AIza[0-9A-Za-z-_]{35}/g, '[REDACTED_API_KEY]');
+  const safeMessage = (message || 'Unknown error').replace(/AIza[0-9A-Za-z-_]{35}/g, '[REDACTED_API_KEY]');
 
   sendJson(
     res,
@@ -111,8 +145,14 @@ export async function getRequestBody(req: any): Promise<any> {
 }
 
 export function getQueryParam(req: any, param: string): string {
-  if (req.query && typeof req.query[param] === 'string') {
-    return req.query[param].trim();
+  if (req.query) {
+    const val = req.query[param];
+    if (typeof val === 'string') {
+      return val.trim();
+    }
+    if (Array.isArray(val) && typeof val[0] === 'string') {
+      return val[0].trim();
+    }
   }
   if (req.url && req.url.includes('?')) {
     try {

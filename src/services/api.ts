@@ -128,61 +128,64 @@ export async function geocodePlaceWithDetails(query: string): Promise<GeocodeDet
     });
     clearTimeout(timeoutId);
 
-    const data = await res.json().catch(() => ({}));
-
-    if (res.status === 404) {
-      return {
-        source: data.source || 'none',
-        status: 404,
-        results: [],
-        error: data.error || `No verified geographic location found matching "${q}".`
-      };
+    const contentType = res.headers.get('content-type') || '';
+    let data: any = null;
+    if (contentType.includes('application/json')) {
+      data = await res.json().catch(() => null);
     }
 
-    if (res.status === 429) {
-      return {
-        source: 'error',
-        status: 429,
-        results: [],
-        error: 'Geocoding service rate limit reached. Please wait a moment and try again.'
+    if (res.ok && data && Array.isArray(data.results) && data.results.length > 0) {
+      const successRes: GeocodeDetailsResponse = {
+        source: data.source || 'server',
+        status: 200,
+        results: data.results
       };
-    }
-
-    if (!res.ok) {
-      return {
-        source: 'error',
-        status: res.status,
-        results: [],
-        error: data.error || `Geocoding failed with status ${res.status}.`
-      };
-    }
-
-    const successRes: GeocodeDetailsResponse = {
-      source: data.source || 'server',
-      status: 200,
-      results: Array.isArray(data.results) ? data.results : []
-    };
-    if (successRes.results.length > 0) {
       clientGeocodeCache.set(cacheKey, successRes);
+      return successRes;
     }
-    return successRes;
-  } catch (err: any) {
+
+    // If server returned non-200, HTML, or 0 results, fall through to direct Open-Meteo lookup
+  } catch (netErr: any) {
     clearTimeout(timeoutId);
-    if (err.name === 'AbortError') {
-      return {
-        source: 'timeout',
-        status: 504,
-        results: [],
-        error: 'Geocoding request timed out after 5 seconds.'
-      };
-    }
-    return {
-      source: 'error',
-      status: 500,
-      results: [],
-      error: `Network error reaching geocoding service: ${err.message}`
-    };
+    console.warn('[Geocode Client] Server call failed or timed out, engaging client fallback:', netErr?.message);
   }
+
+  // Direct Client-Side Fallback 1: Query Open-Meteo directly from browser
+  try {
+    const fallbackRes = await fetch(
+      `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=5&language=en&format=json`
+    );
+    if (fallbackRes.ok) {
+      const fbData = await fallbackRes.json();
+      if (Array.isArray(fbData?.results) && fbData.results.length > 0) {
+        const fbItems = fbData.results.map((item: any) => ({
+          place_id: `client_om_${item.id}`,
+          lat: item.latitude.toString(),
+          lon: item.longitude.toString(),
+          display_name: [item.name, item.admin1, item.country].filter(Boolean).join(', '),
+          type: item.feature_code || 'city',
+          importance: 0.85,
+          verified: true
+        }));
+        const resolved: GeocodeDetailsResponse = {
+          source: 'client_open_meteo_fallback',
+          status: 200,
+          results: fbItems
+        };
+        clientGeocodeCache.set(cacheKey, resolved);
+        return resolved;
+      }
+    }
+  } catch (fbErr) {
+    console.warn('[Geocode Client Fallback] Direct Open-Meteo warning:', fbErr);
+  }
+
+  return {
+    source: 'none',
+    status: 404,
+    results: [],
+    error: `No verified geographic location found matching "${q}". Please check spelling or enter a recognized destination.`
+  };
 }
 
 /**
