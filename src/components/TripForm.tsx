@@ -107,6 +107,7 @@ export const TripForm: React.FC<TripFormProps> = ({
     setInterests(initialData.interests ?? ['nature', 'beaches']);
     setSpecialPreferences(initialData.specialPreferences ?? '');
     setOriginCoords(initialData.originCoords);
+    setErrors({});
   }, [initialData]);
 
   const useCurrentLocation = () => {
@@ -114,7 +115,7 @@ export const TripForm: React.FC<TripFormProps> = ({
 
     if (!navigator.geolocation) {
       setLocationMessage(
-        'Geolocation is not supported by this browser. Enter your starting location manually.',
+        'Location is not supported by this browser. Please enter your starting location manually.',
       );
       return;
     }
@@ -122,38 +123,101 @@ export const TripForm: React.FC<TripFormProps> = ({
     setLocationLoading(true);
 
     navigator.geolocation.getCurrentPosition(
-      (position) => {
+      async (position) => {
         const latitude = position.coords.latitude;
         const longitude = position.coords.longitude;
 
-        setOriginCoords({
-          lat: latitude,
-          lon: longitude,
-        } as NonNullable<TripFormData['originCoords']>);
+        try {
+          const url = new URL(
+            'https://nominatim.openstreetmap.org/reverse',
+          );
+          url.searchParams.set('format', 'jsonv2');
+          url.searchParams.set('lat', String(latitude));
+          url.searchParams.set('lon', String(longitude));
+          url.searchParams.set('zoom', '14');
+          url.searchParams.set('addressdetails', '1');
 
-        setOrigin(
-          `Current location (${latitude.toFixed(5)}, ${longitude.toFixed(5)})`,
-        );
+          const response = await fetch(url.toString(), {
+            headers: { Accept: 'application/json' },
+          });
 
-        setLocationMessage(
-          'Location captured. Coordinates will be included with your trip.',
-        );
-        setErrors((current) => ({ ...current, origin: '' }));
-        setLocationLoading(false);
+          if (!response.ok) {
+            throw new Error(`Place lookup failed: ${response.status}`);
+          }
+
+          const result = await response.json();
+          const address = result.address ?? {};
+
+          const locality =
+            address.city ||
+            address.town ||
+            address.village ||
+            address.municipality ||
+            address.suburb ||
+            address.county ||
+            address.state_district;
+
+          const parts = [
+            locality,
+            address.state,
+            address.country,
+          ].filter(
+            (part, index, array): part is string =>
+              typeof part === 'string' &&
+              part.trim().length > 0 &&
+              array.indexOf(part) === index,
+          );
+
+          const placeName = parts.join(', ');
+
+          if (!placeName) {
+            setLocationMessage(
+              'Coordinates were detected, but the place name is unavailable. Enter your starting location manually.',
+            );
+            setOriginCoords(undefined);
+            return;
+          }
+
+          setOrigin(placeName);
+
+          // This matches the coordinate shape used in the existing form.
+          // Verify that src/types.ts defines originCoords with lat/lon.
+          setOriginCoords({
+            lat: latitude,
+            lon: longitude,
+          } as NonNullable<TripFormData['originCoords']>);
+
+          setErrors((current) => ({
+            ...current,
+            origin: '',
+          }));
+
+          setLocationMessage(`Location found: ${placeName}`);
+        } catch (error) {
+          console.error('Reverse geocoding failed:', error);
+          setLocationMessage(
+            'Coordinates were detected, but the place name could not be retrieved. Enter your starting location manually.',
+          );
+          setOriginCoords(undefined);
+        } finally {
+          setLocationLoading(false);
+        }
       },
       (error) => {
-        let message =
-          'Could not retrieve your location. Please enter it manually.';
-
         if (error.code === error.PERMISSION_DENIED) {
-          message =
-            'Location permission was denied. Allow location access in your browser or enter your starting location manually.';
+          setLocationMessage(
+            'Location permission was denied. Allow location access in your browser settings or enter your starting location manually.',
+          );
         } else if (error.code === error.TIMEOUT) {
-          message =
-            'Location request timed out. Try again or enter your location manually.';
+          setLocationMessage(
+            'Location request timed out. Please try again or enter your location manually.',
+          );
+        } else {
+          setLocationMessage(
+            'Unable to detect your location. Please enter it manually.',
+          );
         }
 
-        setLocationMessage(message);
         setLocationLoading(false);
       },
       {
@@ -170,13 +234,16 @@ export const TripForm: React.FC<TripFormProps> = ({
         ? current.filter((item) => item !== interest)
         : [...current, interest],
     );
+
+    setErrors((current) => ({ ...current, interests: '' }));
   };
 
   const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
     const nextErrors: Record<string, string> = {};
-    const budgetValue = Number(totalBudget);
+    const budgetText = totalBudget.trim();
+    const budgetValue = Number(budgetText);
     const travelersValue = Number(travelers);
     const durationValue = Number(durationDays);
 
@@ -188,25 +255,27 @@ export const TripForm: React.FC<TripFormProps> = ({
       nextErrors.destination = 'Enter your destination.';
     }
 
+    // Accept any finite positive number; no arbitrary maximum budget.
     if (
-      totalBudget.trim() === '' ||
+      !budgetText ||
       !Number.isFinite(budgetValue) ||
       budgetValue <= 0
     ) {
-      nextErrors.totalBudget = 'Enter a budget greater than ₹0.';
+      nextErrors.totalBudget =
+        'Enter any positive budget amount greater than zero.';
     }
 
     if (
-      travelers.trim() === '' ||
-      !Number.isInteger(travelersValue) ||
+      !travelers.trim() ||
+      !Number.isSafeInteger(travelersValue) ||
       travelersValue < 1
     ) {
       nextErrors.travelers = 'Enter at least one traveler.';
     }
 
     if (
-      durationDays.trim() === '' ||
-      !Number.isInteger(durationValue) ||
+      !durationDays.trim() ||
+      !Number.isSafeInteger(durationValue) ||
       durationValue < 1 ||
       durationValue > 365
     ) {
@@ -218,7 +287,8 @@ export const TripForm: React.FC<TripFormProps> = ({
     }
 
     if (returnDate && departureDate && returnDate < departureDate) {
-      nextErrors.returnDate = 'Return date cannot be before departure.';
+      nextErrors.returnDate =
+        'Return date cannot be before departure.';
     }
 
     if (interests.length === 0) {
@@ -229,12 +299,12 @@ export const TripForm: React.FC<TripFormProps> = ({
 
     if (Object.values(nextErrors).some(Boolean)) return;
 
-    const country = initialData?.country;
-
     const formData: TripFormData = {
       origin: origin.trim(),
       destination: destination.trim(),
-      ...(country ? { country } : {}),
+      ...(initialData?.country
+        ? { country: initialData.country }
+        : {}),
       currency: initialData?.currency ?? 'INR',
       totalBudget: budgetValue,
       travelers: travelersValue,
@@ -278,8 +348,7 @@ export const TripForm: React.FC<TripFormProps> = ({
 
         <p className="mt-3 max-w-2xl text-sm leading-6 text-[#77717F]">
           Tell us where you want to go, your budget, and your travel
-          preferences. Your budget can be any positive amount, including
-          round figures.
+          preferences. Enter any positive budget amount that suits your trip.
         </p>
       </div>
 
@@ -304,10 +373,15 @@ export const TripForm: React.FC<TripFormProps> = ({
                   setOrigin(event.target.value);
                   setOriginCoords(undefined);
                   setLocationMessage('');
+                  setErrors((current) => ({
+                    ...current,
+                    origin: '',
+                  }));
                 }}
                 placeholder="e.g. Hyderabad, India"
                 className={`${inputClass} pl-10`}
                 aria-invalid={Boolean(errors.origin)}
+                aria-describedby={errors.origin ? 'origin-error' : undefined}
                 required
               />
             </div>
@@ -324,7 +398,7 @@ export const TripForm: React.FC<TripFormProps> = ({
                 <LocateFixed className="h-4 w-4" />
               )}
               {locationLoading
-                ? 'Getting your location…'
+                ? 'Finding your place…'
                 : 'Use My Current Location'}
             </button>
 
@@ -335,7 +409,9 @@ export const TripForm: React.FC<TripFormProps> = ({
             )}
 
             {errors.origin && (
-              <p className="mt-1 text-xs text-rose-600">{errors.origin}</p>
+              <p id="origin-error" className="mt-1 text-xs text-rose-600">
+                {errors.origin}
+              </p>
             )}
           </div>
 
@@ -353,7 +429,13 @@ export const TripForm: React.FC<TripFormProps> = ({
                 type="text"
                 autoComplete="off"
                 value={destination}
-                onChange={(event) => setDestination(event.target.value)}
+                onChange={(event) => {
+                  setDestination(event.target.value);
+                  setErrors((current) => ({
+                    ...current,
+                    destination: '',
+                  }));
+                }}
                 placeholder="e.g. Goa, Paris, or Singapore"
                 className={`${inputClass} pl-10`}
                 aria-invalid={Boolean(errors.destination)}
@@ -379,9 +461,9 @@ export const TripForm: React.FC<TripFormProps> = ({
               <input
                 id="trip-budget"
                 type="number"
-                inputMode="numeric"
-                min="1"
-                step="1"
+                inputMode="decimal"
+                min="0.01"
+                step="any"
                 value={totalBudget}
                 onChange={(event) => {
                   setTotalBudget(event.target.value);
@@ -390,14 +472,15 @@ export const TripForm: React.FC<TripFormProps> = ({
                     totalBudget: '',
                   }));
                 }}
-                placeholder="e.g. 15000"
+                placeholder="Enter any amount, e.g. 15000"
                 className={`${inputClass} pl-10`}
                 aria-invalid={Boolean(errors.totalBudget)}
+                aria-describedby="budget-help"
                 required
               />
             </div>
-            <p className="mt-1 text-xs text-[#77717F]">
-              Enter any positive amount, such as ₹5,000 or ₹15,000.
+            <p id="budget-help" className="mt-1 text-xs text-[#77717F]">
+              Any positive amount is accepted. No fixed budget limit.
             </p>
             {errors.totalBudget && (
               <p className="mt-1 text-xs text-rose-600">
@@ -421,14 +504,22 @@ export const TripForm: React.FC<TripFormProps> = ({
                 min="1"
                 step="1"
                 value={travelers}
-                onChange={(event) => setTravelers(event.target.value)}
+                onChange={(event) => {
+                  setTravelers(event.target.value);
+                  setErrors((current) => ({
+                    ...current,
+                    travelers: '',
+                  }));
+                }}
                 className={`${inputClass} pl-10`}
                 aria-invalid={Boolean(errors.travelers)}
                 required
               />
             </div>
             {errors.travelers && (
-              <p className="mt-1 text-xs text-rose-600">{errors.travelers}</p>
+              <p className="mt-1 text-xs text-rose-600">
+                {errors.travelers}
+              </p>
             )}
           </div>
 
@@ -446,7 +537,13 @@ export const TripForm: React.FC<TripFormProps> = ({
               max="365"
               step="1"
               value={durationDays}
-              onChange={(event) => setDurationDays(event.target.value)}
+              onChange={(event) => {
+                setDurationDays(event.target.value);
+                setErrors((current) => ({
+                  ...current,
+                  durationDays: '',
+                }));
+              }}
               className={inputClass}
               aria-invalid={Boolean(errors.durationDays)}
               required
@@ -471,7 +568,13 @@ export const TripForm: React.FC<TripFormProps> = ({
                 id="trip-departure"
                 type="date"
                 value={departureDate}
-                onChange={(event) => setDepartureDate(event.target.value)}
+                onChange={(event) => {
+                  setDepartureDate(event.target.value);
+                  setErrors((current) => ({
+                    ...current,
+                    departureDate: '',
+                  }));
+                }}
                 className={`${inputClass} pl-10`}
                 aria-invalid={Boolean(errors.departureDate)}
                 required
@@ -496,12 +599,20 @@ export const TripForm: React.FC<TripFormProps> = ({
               type="date"
               min={departureDate || undefined}
               value={returnDate}
-              onChange={(event) => setReturnDate(event.target.value)}
+              onChange={(event) => {
+                setReturnDate(event.target.value);
+                setErrors((current) => ({
+                  ...current,
+                  returnDate: '',
+                }));
+              }}
               className={inputClass}
               aria-invalid={Boolean(errors.returnDate)}
             />
             {errors.returnDate && (
-              <p className="mt-1 text-xs text-rose-600">{errors.returnDate}</p>
+              <p className="mt-1 text-xs text-rose-600">
+                {errors.returnDate}
+              </p>
             )}
           </div>
 
@@ -604,13 +715,15 @@ export const TripForm: React.FC<TripFormProps> = ({
                       : 'border-[#D8C3A5] bg-white text-[#4B294F] hover:border-[#9B72CF]'
                   }`}
                 >
-                  {interest.replaceAll('-', ' ')}
+                  {interest.replace(/-/g, ' ')}
                 </button>
               );
             })}
           </div>
           {errors.interests && (
-            <p className="mt-2 text-xs text-rose-600">{errors.interests}</p>
+            <p className="mt-2 text-xs text-rose-600">
+              {errors.interests}
+            </p>
           )}
         </fieldset>
 
@@ -653,7 +766,7 @@ export const TripForm: React.FC<TripFormProps> = ({
           <button
             type="button"
             onClick={onLoadSample}
-            disabled={isLoading}
+            disabled={isLoading || locationLoading}
             className="rounded-xl border border-[#D8C3A5] px-6 py-4 text-sm font-bold text-[#4B294F] transition hover:bg-[#FAF7F0] disabled:opacity-60"
           >
             Load Sample Trip
