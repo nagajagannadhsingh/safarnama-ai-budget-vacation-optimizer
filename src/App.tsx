@@ -12,7 +12,7 @@ import { HowItWorksSection } from './components/HowItWorksSection';
 import { BudgetFriendlySpotlight } from './components/BudgetFriendlySpotlight';
 import { MapExplorerSection } from './components/MapExplorerSection';
 import { TripForm } from './components/TripForm';
-import { TripResults } from './components/TripResults';
+import TripResults from './components/TripResults';
 import { ClosingStorySection } from './components/ClosingStorySection';
 import { DestinationDetailModal } from './components/DestinationDetailModal';
 import { DestinationDiscoveryModal } from './components/DestinationDiscoveryModal';
