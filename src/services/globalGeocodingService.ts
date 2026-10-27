@@ -4,12 +4,13 @@
  * and support for cities, POIs, temples, addresses, and regions worldwide.
  */
 
-import { isCoordinateInIndia } from '../data/verifiedPlaces.ts';
-import { findVerifiedTemple } from '../data/verifiedPlaces.ts';
-import { findVerifiedDestination } from '../data/verifiedPlaces.ts';
-import { findInternationalDestination } from '../data/internationalDestinations.ts';
-import { DESTINATIONS_DATA } from '../data/destinations.ts';
-
+import { isCoordinateInIndia } from '../data/verifiedPlaces.js';
+import {
+  findVerifiedTemple,
+  findVerifiedDestination
+} from '../data/verifiedPlaces.js';
+import { findInternationalDestination } from '../data/internationalDestinations.js';
+import { DESTINATIONS_DATA } from '../data/destinations.js';
 export interface GeocodeResultItem {
   place_id: string | number;
   osm_id?: number | string;
