@@ -1,6 +1,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  AlertCircle,
   ExternalLink,
   Globe,
   Hotel,
@@ -10,7 +11,6 @@ import {
   RefreshCw,
   Search,
   Star,
-  AlertCircle,
 } from "lucide-react";
 import type { AccommodationItem } from "../types";
 
@@ -31,10 +31,7 @@ interface OverpassElement {
   id: number;
   lat?: number;
   lon?: number;
-  center?: {
-    lat: number;
-    lon: number;
-  };
+  center?: { lat: number; lon: number };
   tags?: Record<string, string>;
 }
 
@@ -42,67 +39,77 @@ interface OverpassResponse {
   elements?: OverpassElement[];
 }
 
-const GEOCODING_URL =
-  "https://nominatim.openstreetmap.org/search";
+const NOMINATIM_URL = "https://nominatim.openstreetmap.org/search";
 
 const OVERPASS_URLS = [
   "https://overpass-api.de/api/interpreter",
   "https://overpass.kumi.systems/api/interpreter",
 ];
 
-const REQUEST_TIMEOUT_MS = 10000;
+const REQUEST_TIMEOUT_MS = 8000;
 const SEARCH_RADIUS_METERS = 12000;
 
-function fetchWithTimeout(
+/**
+ * Timeout covers the entire operation, including reading and parsing JSON.
+ */
+async function requestJson<T>(
   url: string,
   options: RequestInit = {},
   timeoutMs = REQUEST_TIMEOUT_MS
-): Promise<Response> {
+): Promise<T> {
   const controller = new AbortController();
 
-  const timeout = setTimeout(() => {
+  const timeoutId = setTimeout(() => {
     controller.abort();
   }, timeoutMs);
 
-  return fetch(url, {
-    ...options,
-    signal: controller.signal,
-  }).finally(() => clearTimeout(timeout));
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      throw new Error(`Request failed with HTTP ${response.status}.`);
+    }
+
+    return (await response.json()) as T;
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new Error(
+        `The request timed out after ${Math.round(timeoutMs / 1000)} seconds.`
+      );
+    }
+
+    throw error instanceof Error
+      ? error
+      : new Error("An unexpected network error occurred.");
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
-function getGoogleMapsUrl(
-  name: string,
-  lat: number,
-  lon: number
-): string {
+function getMapsUrl(name: string, lat: number, lon: number): string {
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
     `${name} ${lat},${lon}`
   )}`;
 }
 
-function getOfficialWebsiteSearchUrl(name: string): string {
+function getWebsiteSearchUrl(name: string): string {
   return `https://www.google.com/search?q=${encodeURIComponent(
     `${name} official website`
   )}`;
 }
 
-function normalizeWebsite(
-  website?: string | null
-): string | undefined {
-  if (!website) return undefined;
-
-  const value = website.trim();
-
-  if (!value) return undefined;
+function normalizeWebsite(value?: string | null): string | undefined {
+  if (!value?.trim()) return undefined;
 
   try {
     const url = new URL(
       /^https?:\/\//i.test(value) ? value : `https://${value}`
     );
 
-    if (url.protocol !== "https:" && url.protocol !== "http:") {
-      return undefined;
-    }
+    if (!["http:", "https:"].includes(url.protocol)) return undefined;
 
     return url.href;
   } catch {
@@ -111,20 +118,17 @@ function normalizeWebsite(
 }
 
 function getCategory(tags: Record<string, string>): string {
-  const tourism = tags.tourism;
+  const categories: Record<string, string> = {
+    hotel: "Hotel",
+    motel: "Motel",
+    hostel: "Hostel",
+    guest_house: "Guest House",
+    apartment: "Apartment",
+    resort: "Resort",
+    chalet: "Chalet",
+  };
 
-  if (tourism === "hotel") return "Hotel";
-  if (tourism === "motel") return "Motel";
-  if (tourism === "hostel") return "Hostel";
-  if (tourism === "guest_house") return "Guest house";
-  if (tourism === "apartment") return "Apartment";
-  if (tourism === "resort") return "Resort";
-  if (tourism === "chalet") return "Chalet";
-  if (tourism === "camp_site") return "Camp site";
-
-  return tourism
-    ? tourism.replaceAll("_", " ")
-    : "Accommodation";
+  return categories[tags.tourism ?? ""] ?? "Accommodation";
 }
 
 function getAddress(tags: Record<string, string>): string | undefined {
@@ -132,12 +136,12 @@ function getAddress(tags: Record<string, string>): string | undefined {
     tags["addr:housenumber"],
     tags["addr:street"],
     tags["addr:suburb"],
-    tags["addr:city"],
+    tags["addr:city"] || tags["addr:town"] || tags["addr:village"],
     tags["addr:state"],
     tags["addr:postcode"],
   ].filter(Boolean);
 
-  return parts.length > 0 ? parts.join(", ") : undefined;
+  return parts.length ? parts.join(", ") : undefined;
 }
 
 function toAccommodation(
@@ -149,9 +153,7 @@ function toAccommodation(
   const lat = element.lat ?? element.center?.lat;
   const lon = element.lon ?? element.center?.lon;
 
-  if (!name || lat === undefined || lon === undefined) {
-    return null;
-  }
+  if (!name || lat === undefined || lon === undefined) return null;
 
   if (
     !Number.isFinite(lat) ||
@@ -165,76 +167,57 @@ function toAccommodation(
   }
 
   const website = normalizeWebsite(
-    tags.website ||
-      tags["contact:website"] ||
-      tags.url
+    tags.website || tags["contact:website"] || tags.url
   );
 
-  const phone =
-    tags.phone ||
-    tags["contact:phone"] ||
-    null;
-
-  const category = getCategory(tags);
+  const amenities = [
+    tags.internet_access === "yes" ? "Internet access" : "",
+    tags.swimming_pool === "yes" ? "Swimming pool" : "",
+    tags.restaurant === "yes" ? "Restaurant" : "",
+    tags.parking === "yes" ? "Parking" : "",
+    tags.air_conditioning === "yes" ? "Air conditioning" : "",
+  ].filter(Boolean);
 
   return {
     id: `osm-${element.type}-${element.id}`,
     name,
-    category,
+    category: getCategory(tags),
     rawCategory: tags.tourism,
     lat,
     lon,
     address: getAddress(tags),
-    phone,
+    phone: tags.phone || tags["contact:phone"] || null,
     website: website ?? null,
     source: "OpenStreetMap",
     placeId: element.id,
-    googleMapsUrl: getGoogleMapsUrl(name, lat, lon),
-    amenities: [
-      tags.internet_access === "yes" ? "Internet access" : "",
-      tags.swimming_pool === "yes" ? "Swimming pool" : "",
-      tags.restaurant === "yes" ? "Restaurant" : "",
-      tags.parking === "yes" ? "Parking" : "",
-      tags.air_conditioning === "yes" ? "Air conditioning" : "",
-    ].filter(Boolean),
+    googleMapsUrl: getMapsUrl(name, lat, lon),
+    amenities,
   };
 }
 
 async function geocodeDestination(
   destination: string
 ): Promise<GeocodingResult> {
-  const url = new URL(GEOCODING_URL);
-
+  const url = new URL(NOMINATIM_URL);
   url.searchParams.set("q", destination);
   url.searchParams.set("format", "jsonv2");
   url.searchParams.set("limit", "1");
   url.searchParams.set("addressdetails", "1");
 
-  const response = await fetchWithTimeout(
-    url.toString(),
-    {
-      headers: {
-        Accept: "application/json",
-        "Accept-Language": "en",
-      },
-    }
-  );
+  const results = await requestJson<GeocodingResult[]>(url.toString(), {
+    headers: {
+      Accept: "application/json",
+      "Accept-Language": "en",
+    },
+  });
 
-  if (!response.ok) {
+  if (!Array.isArray(results) || results.length === 0) {
     throw new Error(
-      `Location search failed (HTTP ${response.status}).`
+      `No location was found for "${destination}". Check the spelling or try a nearby city.`
     );
   }
 
-  const data = (await response.json()) as GeocodingResult[];
-
-  if (!Array.isArray(data) || data.length === 0) {
-    throw new Error(
-      `We could not find "${destination}". Check the spelling or try a nearby city.`
-    );
-  }
-
-  const result = data[0];
+  const result = results[0];
   const lat = Number(result.lat);
   const lon = Number(result.lon);
 
@@ -254,7 +237,7 @@ async function geocodeDestination(
 
 function createOverpassQuery(lat: number, lon: number): string {
   return `
-[out:json][timeout:8];
+[out:json][timeout:7];
 (
   nwr(around:${SEARCH_RADIUS_METERS},${lat},${lon})["tourism"~"^(hotel|motel|hostel|guest_house|apartment|resort|chalet)$"]["name"];
 );
@@ -262,14 +245,14 @@ out center tags;
 `;
 }
 
-async function fetchOverpassResults(
+async function fetchAccommodationElements(
   query: string
 ): Promise<OverpassElement[]> {
   let lastError: Error | null = null;
 
   for (const endpoint of OVERPASS_URLS) {
     try {
-      const response = await fetchWithTimeout(
+      const data = await requestJson<OverpassResponse>(
         endpoint,
         {
           method: "POST",
@@ -281,14 +264,6 @@ async function fetchOverpassResults(
         },
         REQUEST_TIMEOUT_MS
       );
-
-      if (!response.ok) {
-        throw new Error(
-          `Accommodation provider returned HTTP ${response.status}.`
-        );
-      }
-
-      const data = (await response.json()) as OverpassResponse;
 
       if (!Array.isArray(data.elements)) {
         throw new Error("The accommodation provider returned invalid data.");
@@ -307,36 +282,25 @@ async function fetchOverpassResults(
 }
 
 function HotelCard({
-  accommodation,
+  item,
   onFocusMap,
 }: {
-  accommodation: AccommodationItem;
+  item: AccommodationItem;
   onFocusMap?: (item: AccommodationItem) => void;
 }) {
   const mapsUrl =
-    accommodation.googleMapsUrl ||
-    getGoogleMapsUrl(
-      accommodation.name,
-      accommodation.lat,
-      accommodation.lon
-    );
+    item.googleMapsUrl || getMapsUrl(item.name, item.lat, item.lon);
 
-  const officialWebsite = normalizeWebsite(
-    accommodation.website
-  );
+  const officialWebsite = normalizeWebsite(item.website);
 
-  const websiteSearchUrl = getOfficialWebsiteSearchUrl(
-    accommodation.name
-  );
-
-  const hasVerifiedRating =
-    typeof accommodation.rating === "number" &&
-    Number.isFinite(accommodation.rating) &&
-    accommodation.rating >= 0 &&
-    accommodation.rating <= 5;
+  const validRating =
+    typeof item.rating === "number" &&
+    Number.isFinite(item.rating) &&
+    item.rating >= 0 &&
+    item.rating <= 5;
 
   return (
-    <article className="overflow-hidden rounded-2xl border border-[#e9dfee] bg-white shadow-sm transition duration-200 hover:-translate-y-0.5 hover:shadow-md">
+    <article className="overflow-hidden rounded-2xl border border-[#e9dfee] bg-white shadow-sm transition hover:shadow-md">
       <div className="flex items-start gap-3 p-4 sm:gap-4 sm:p-5">
         <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[#f1e9f7] text-[#4B294F]">
           <Hotel size={24} aria-hidden="true" />
@@ -345,107 +309,88 @@ function HotelCard({
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div className="min-w-0">
-              <h3 className="break-words text-base font-bold text-[#4B294F] sm:text-lg">
-                {accommodation.name}
+              <h3 className="break-words text-lg font-bold text-[#4B294F]">
+                {item.name}
               </h3>
-
               <p className="mt-1 text-sm capitalize text-gray-600">
-                {accommodation.category}
+                {item.category}
               </p>
             </div>
 
-            {hasVerifiedRating && (
-              <div
-                className="flex shrink-0 items-center gap-1 rounded-lg bg-amber-50 px-2 py-1 text-sm font-semibold text-amber-800"
-                aria-label={`Rating ${accommodation.rating} out of 5`}
-              >
+            {validRating && (
+              <span className="inline-flex items-center gap-1 rounded-lg bg-amber-50 px-2 py-1 text-sm font-semibold text-amber-800">
                 <Star size={14} fill="currentColor" />
-                {accommodation.rating?.toFixed(1)}
-                {typeof accommodation.reviewCount === "number" &&
-                  accommodation.reviewCount > 0 && (
-                    <span className="font-normal text-gray-600">
-                      ({accommodation.reviewCount})
-                    </span>
-                  )}
-              </div>
+                {item.rating!.toFixed(1)}
+                {typeof item.reviewCount === "number" &&
+                  item.reviewCount > 0 &&
+                  ` (${item.reviewCount})`}
+              </span>
             )}
           </div>
 
-          {accommodation.address && (
+          {item.address && (
             <p className="mt-3 flex items-start gap-2 text-sm leading-5 text-gray-600">
               <MapPin
                 size={16}
                 className="mt-0.5 shrink-0 text-[#9B72CF]"
               />
-              <span>{accommodation.address}</span>
+              <span>{item.address}</span>
             </p>
           )}
 
-          {accommodation.phone && (
+          {item.phone && (
             <a
-              href={`tel:${accommodation.phone}`}
+              href={`tel:${item.phone}`}
               className="mt-2 inline-flex items-center gap-2 break-all text-sm text-gray-600 hover:text-[#4B294F]"
             >
               <Phone size={15} />
-              {accommodation.phone}
+              {item.phone}
             </a>
           )}
 
-          {Array.isArray(accommodation.amenities) &&
-            accommodation.amenities.length > 0 && (
-              <div className="mt-3 flex flex-wrap gap-2">
-                {accommodation.amenities.slice(0, 4).map((amenity) => (
-                  <span
-                    key={amenity}
-                    className="rounded-full bg-[#f7f3fa] px-2.5 py-1 text-xs text-[#4B294F]"
-                  >
-                    {amenity}
-                  </span>
-                ))}
-              </div>
-            )}
+          {item.amenities && item.amenities.length > 0 && (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {item.amenities.slice(0, 4).map((amenity) => (
+                <span
+                  key={amenity}
+                  className="rounded-full bg-[#f7f3fa] px-2.5 py-1 text-xs text-[#4B294F]"
+                >
+                  {amenity}
+                </span>
+              ))}
+            </div>
+          )}
 
           <div className="mt-4 flex flex-wrap gap-2">
             <a
               href={mapsUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-[#4B294F] px-3 py-2 text-sm font-semibold text-white transition hover:bg-[#613866] focus:outline-none focus:ring-2 focus:ring-[#9B72CF] focus:ring-offset-2"
+              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-[#4B294F] px-3 py-2 text-sm font-semibold text-white hover:bg-[#613866]"
             >
               <MapPin size={16} />
               Google Maps
               <ExternalLink size={13} />
             </a>
 
-            {officialWebsite ? (
-              <a
-                href={officialWebsite}
-                target="_blank"
-                rel="noopener noreferrer nofollow"
-                className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-[#d9c7e7] bg-white px-3 py-2 text-sm font-semibold text-[#4B294F] transition hover:bg-[#f7f3fa] focus:outline-none focus:ring-2 focus:ring-[#9B72CF] focus:ring-offset-2"
-              >
-                <Globe size={16} />
-                Official Website
-                <ExternalLink size={13} />
-              </a>
-            ) : (
-              <a
-                href={websiteSearchUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-[#d9c7e7] bg-white px-3 py-2 text-sm font-semibold text-[#4B294F] transition hover:bg-[#f7f3fa] focus:outline-none focus:ring-2 focus:ring-[#9B72CF] focus:ring-offset-2"
-              >
-                <Search size={16} />
-                Find Official Website
-                <ExternalLink size={13} />
-              </a>
-            )}
+            <a
+              href={officialWebsite || getWebsiteSearchUrl(item.name)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-[#d9c7e7] px-3 py-2 text-sm font-semibold text-[#4B294F] hover:bg-[#f7f3fa]"
+            >
+              <Globe size={16} />
+              {officialWebsite
+                ? "Official Website"
+                : "Find Official Website"}
+              <ExternalLink size={13} />
+            </a>
 
             {onFocusMap && (
               <button
                 type="button"
-                onClick={() => onFocusMap(accommodation)}
-                className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 transition hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#9B72CF] focus:ring-offset-2"
+                onClick={() => onFocusMap(item)}
+                className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
               >
                 <MapPin size={16} />
                 Show on App Map
@@ -454,10 +399,9 @@ function HotelCard({
           </div>
 
           <p className="mt-3 text-xs leading-5 text-gray-500">
-            Listing source: {accommodation.source || "OpenStreetMap"}.
-            {" "}Website links are provided only when available in the listing;
-            otherwise, use the website-search link. Prices and room availability
-            are not confirmed by this listing.
+            Source: {item.source || "Existing application data"}. Hotel
+            availability and prices have not been confirmed. A website-search
+            link is not the same as a verified official website.
           </p>
         </div>
       </div>
@@ -475,7 +419,6 @@ export default function AccommodationFinder({
   >([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
   const [retryKey, setRetryKey] = useState(0);
   const [searchTerm, setSearchTerm] = useState("");
 
@@ -488,14 +431,15 @@ export default function AccommodationFinder({
 
     setFoundAccommodations([]);
     setError(null);
-    setNotice(null);
 
     if (!destination) {
       setLoading(false);
-      return;
+      return () => {
+        cancelled = true;
+      };
     }
 
-    async function searchAccommodations() {
+    async function searchHotels() {
       setLoading(true);
 
       try {
@@ -508,7 +452,7 @@ export default function AccommodationFinder({
           Number(location.lon)
         );
 
-        const elements = await fetchOverpassResults(query);
+        const elements = await fetchAccommodationElements(query);
 
         if (cancelled || requestId !== requestIdRef.current) return;
 
@@ -518,31 +462,33 @@ export default function AccommodationFinder({
             (item): item is AccommodationItem => item !== null
           );
 
-        const unique = Array.from(
-          new Map(
-            converted.map((item) => [
-              `${item.name.toLowerCase()}-${item.lat.toFixed(5)}-${item.lon.toFixed(5)}`,
-              item,
-            ])
-          ).values()
-        ).sort((a, b) => a.name.localeCompare(b.name));
+        const unique = new Map<string, AccommodationItem>();
 
-        setFoundAccommodations(unique);
+        for (const item of converted) {
+          const key = `${item.name.toLowerCase()}-${item.lat.toFixed(5)}-${item.lon.toFixed(5)}`;
 
-        if (unique.length === 0) {
-          setNotice(
-            "No named accommodation listings were returned for this area. Try a nearby city or use Google Maps to explore more hotels."
-          );
+          if (!unique.has(key)) unique.set(key, item);
         }
+
+        setFoundAccommodations(
+          Array.from(unique.values()).sort((a, b) =>
+            a.name.localeCompare(b.name)
+          )
+        );
+
+        setError(
+          unique.size === 0
+            ? `No named accommodation listings were returned for ${destination}. Try a nearby city or use the Google Maps search.`
+            : null
+        );
       } catch (err) {
         if (cancelled || requestId !== requestIdRef.current) return;
 
-        const message =
+        setError(
           err instanceof Error
             ? err.message
-            : "Could not retrieve accommodation listings.";
-
-        setError(message);
+            : "Could not load accommodation listings."
+        );
       } finally {
         if (!cancelled && requestId === requestIdRef.current) {
           setLoading(false);
@@ -550,7 +496,7 @@ export default function AccommodationFinder({
       }
     }
 
-    void searchAccommodations();
+    void searchHotels();
 
     return () => {
       cancelled = true;
@@ -576,10 +522,8 @@ export default function AccommodationFinder({
       }
 
       const key = `${item.name.trim().toLowerCase()}-${item.lat.toFixed(5)}-${item.lon.toFixed(5)}`;
-
       const existing = unique.get(key);
 
-      // Prefer a record with an actual website or rating if duplicates exist.
       if (
         !existing ||
         (!existing.website && Boolean(item.website)) ||
@@ -593,9 +537,9 @@ export default function AccommodationFinder({
   }, [accommodations, foundAccommodations]);
 
   const filteredAccommodations = useMemo(() => {
-    const query = searchTerm.trim().toLowerCase();
+    const term = searchTerm.trim().toLowerCase();
 
-    if (!query) return allAccommodations;
+    if (!term) return allAccommodations;
 
     return allAccommodations.filter((item) =>
       [
@@ -605,7 +549,7 @@ export default function AccommodationFinder({
         ...(item.amenities ?? []),
       ]
         .filter(Boolean)
-        .some((value) => String(value).toLowerCase().includes(query))
+        .some((value) => String(value).toLowerCase().includes(term))
     );
   }, [allAccommodations, searchTerm]);
 
@@ -620,7 +564,10 @@ export default function AccommodationFinder({
     )}`;
 
   return (
-    <section className="space-y-5" aria-labelledby="accommodation-heading">
+    <section
+      className="space-y-5"
+      aria-labelledby="accommodation-heading"
+    >
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
         <div>
           <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-[#f1e9f7] px-3 py-1.5 text-xs font-semibold text-[#4B294F]">
@@ -636,9 +583,9 @@ export default function AccommodationFinder({
           </h2>
 
           <p className="mt-2 max-w-2xl text-sm leading-6 text-gray-600">
-            Explore named accommodation listings around{" "}
+            Explore accommodation listings around{" "}
             <strong>{destinationName || "your destination"}</strong>.
-            Open each hotel's map location or its listed website.
+            Open a hotel's map location or website.
           </p>
         </div>
 
@@ -647,7 +594,7 @@ export default function AccommodationFinder({
             href={mapsSearchUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-[#d9c7e7] px-3 py-2 text-sm font-semibold text-[#4B294F] hover:bg-[#f7f3fa]"
+            className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-[#d9c7e7] px-3 py-2 text-sm font-semibold text-[#4B294F] hover:bg-[#f7f3fa]"
           >
             <MapPin size={16} />
             More on Google Maps
@@ -658,7 +605,7 @@ export default function AccommodationFinder({
             href={bookingSearchUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-[#4B294F] px-3 py-2 text-sm font-semibold text-white hover:bg-[#613866]"
+            className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-[#4B294F] px-3 py-2 text-sm font-semibold text-white hover:bg-[#613866]"
           >
             Search Booking.com
             <ExternalLink size={13} />
@@ -678,7 +625,7 @@ export default function AccommodationFinder({
             onChange={(event) => setSearchTerm(event.target.value)}
             placeholder="Filter by hotel name, type, address, or amenity"
             aria-label="Filter accommodation listings"
-            className="min-h-11 w-full rounded-xl border border-gray-200 bg-white py-2 pl-10 pr-4 text-sm outline-none transition focus:border-[#9B72CF] focus:ring-2 focus:ring-[#9B72CF]/20"
+            className="min-h-11 w-full rounded-xl border border-gray-200 bg-white py-2 pl-10 pr-4 text-sm outline-none focus:border-[#9B72CF] focus:ring-2 focus:ring-[#9B72CF]/20"
           />
         </div>
       )}
@@ -694,20 +641,19 @@ export default function AccommodationFinder({
           />
           <div>
             <p className="font-semibold text-[#4B294F]">
-              Searching real accommodation listings…
+              Searching accommodation listings…
             </p>
             <p className="mt-1 text-sm text-gray-600">
-              Checking geographic data for {destinationName}. Public data
-              coverage varies by destination.
+              Existing hotel cards remain visible while the search runs.
             </p>
           </div>
         </div>
       )}
 
-      {error && !loading && (
+      {error && (
         <div
           role="alert"
-          className="rounded-2xl border border-rose-200 bg-rose-50 p-5"
+          className="rounded-2xl border border-rose-200 bg-rose-50 p-4"
         >
           <div className="flex items-start gap-3">
             <AlertCircle
@@ -715,20 +661,19 @@ export default function AccommodationFinder({
               className="mt-0.5 shrink-0 text-rose-700"
             />
             <div className="flex-1">
-              <h3 className="font-semibold text-rose-900">
-                Could not load accommodation listings
-              </h3>
+              <p className="font-semibold text-rose-900">
+                {allAccommodations.length > 0
+                  ? "Additional hotel search failed"
+                  : "Could not load hotel listings"}
+              </p>
               <p className="mt-1 text-sm leading-6 text-rose-800">
                 {error}
-              </p>
-              <p className="mt-2 text-sm text-rose-800">
-                You can still search for hotels using Google Maps or
-                Booking.com above.
               </p>
               <button
                 type="button"
                 onClick={() => setRetryKey((key) => key + 1)}
-                className="mt-3 inline-flex min-h-10 items-center gap-2 rounded-xl bg-[#4B294F] px-4 py-2 text-sm font-semibold text-white hover:bg-[#613866]"
+                disabled={loading}
+                className="mt-3 inline-flex min-h-10 items-center gap-2 rounded-xl bg-[#4B294F] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
               >
                 <RefreshCw size={15} />
                 Retry search
@@ -738,34 +683,21 @@ export default function AccommodationFinder({
         </div>
       )}
 
-      {notice && !loading && !error && (
-        <div className="rounded-2xl border border-[#e9dfee] bg-[#faf7fc] p-4 text-sm leading-6 text-[#4B294F]">
-          {notice}
-        </div>
-      )}
-
       {filteredAccommodations.length > 0 && (
         <>
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-sm text-gray-600">
-              <strong className="text-[#4B294F]">
-                {filteredAccommodations.length}
-              </strong>{" "}
-              accommodation listing
-              {filteredAccommodations.length === 1 ? "" : "s"}
-              {" "}found
-            </p>
-
-            <span className="text-xs text-gray-500">
-              Source: OpenStreetMap and existing app data
-            </span>
-          </div>
+          <p className="text-sm text-gray-600">
+            <strong className="text-[#4B294F]">
+              {filteredAccommodations.length}
+            </strong>{" "}
+            accommodation listing
+            {filteredAccommodations.length === 1 ? "" : "s"}
+          </p>
 
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
             {filteredAccommodations.map((item) => (
               <HotelCard
                 key={`${item.id}-${item.lat}-${item.lon}`}
-                accommodation={item}
+                item={item}
                 onFocusMap={onFocusMap}
               />
             ))}
@@ -775,47 +707,27 @@ export default function AccommodationFinder({
 
       {!loading &&
         !error &&
-        allAccommodations.length > 0 &&
-        filteredAccommodations.length === 0 && (
-          <div className="rounded-2xl border border-gray-200 bg-white p-6 text-center">
-            <Search
-              size={28}
-              className="mx-auto text-gray-400"
-            />
-            <p className="mt-3 font-semibold text-[#4B294F]">
-              No matching accommodation
-            </p>
-            <p className="mt-1 text-sm text-gray-600">
-              Try a different hotel name or filter.
-            </p>
-          </div>
-        )}
-
-      {!loading &&
-        !error &&
-        allAccommodations.length === 0 &&
-        !notice && (
+        allAccommodations.length === 0 && (
           <div className="rounded-2xl border border-gray-200 bg-white p-6 text-center">
             <Hotel
               size={30}
               className="mx-auto text-[#9B72CF]"
             />
             <h3 className="mt-3 font-semibold text-[#4B294F]">
-              No listings available yet
+              No hotel listings found
             </h3>
             <p className="mt-2 text-sm leading-6 text-gray-600">
-              No named hotels were returned for this destination. Use the
-              external search links above to explore current listings.
+              The geographic data provider returned no named hotels for this
+              destination. Try Google Maps above or search another nearby area.
             </p>
           </div>
         )}
 
       <p className="text-xs leading-5 text-gray-500">
-        Data transparency: OpenStreetMap is a community-maintained geographic
-        database. It may not contain every hotel or its official website.
-        Listings do not confirm current room availability, prices, ratings,
-        or booking status. Verify those details with the property or booking
-        provider before reserving.
+        Data source: OpenStreetMap and existing application data. Public
+        geographic data may be incomplete. Official websites, prices, ratings,
+        reviews, and room availability are not guaranteed to be present or
+        current. Verify details with the hotel before booking.
       </p>
     </section>
   );
