@@ -6,14 +6,17 @@ import type {
 } from "../types";
 
 /**
- * Keep only accommodation data supplied by an actual provider.
- * This module intentionally does not invent hotels, prices, photos,
- * ratings, reviews, coordinates, or amenities.
+ * Accommodation records must come from a real data provider.
+ * No fictional properties, prices, photographs, ratings, or reviews
+ * are created in this file.
  *
- * Populate this array from your real accommodation provider or API.
+ * Your application should pass real API results into AccommodationFinder.
  */
 export const enrichedAccommodations: AccommodationItem[] = [];
 
+/**
+ * Converts a supplied rating to a five-point scale when its scale is known.
+ */
 function normalizeRating(
   rating: number | undefined,
   scale: string | undefined
@@ -39,6 +42,9 @@ function normalizeRating(
   return Math.min(5, rating);
 }
 
+/**
+ * Keeps only review records with actual text and a stated source.
+ */
 function validReviews(
   reviews: GuestReviewItem[] | undefined
 ): GuestReviewItem[] {
@@ -56,10 +62,10 @@ function validReviews(
 }
 
 /**
- * Creates a transparent, rule-based summary from supplied reviews.
+ * Generates a rule-based summary from supplied guest review text.
  *
- * This function does NOT call an AI model. Its output must not be
- * represented as genuine AI-generated analysis.
+ * This function does not call Gemini or another AI model.
+ * Its output must not be presented as AI-generated analysis.
  */
 export function generateDeterministicReviewInsights(
   hotel: AccommodationItem
@@ -81,26 +87,33 @@ export function generateDeterministicReviewInsights(
     .map((review) =>
       normalizeRating(review.rating, review.ratingScale)
     )
-    .filter((rating): rating is number => rating !== undefined);
+    .filter(
+      (rating): rating is number => rating !== undefined
+    );
 
-  const average =
+  const averageRating =
     normalizedRatings.length > 0
-      ? normalizedRatings.reduce((sum, value) => sum + value, 0) /
-        normalizedRatings.length
+      ? normalizedRatings.reduce(
+          (total, rating) => total + rating,
+          0
+        ) / normalizedRatings.length
       : undefined;
 
-  const overallSentiment: AccommodationReviewInsights["overallSentiment"] =
-    average === undefined
-      ? "mixed"
-      : average >= 4.5
-        ? "exceptional"
-        : average >= 4
-          ? "very_good"
-          : average >= 3
-            ? "average"
-            : "mixed";
+  let overallSentiment: AccommodationReviewInsights["overallSentiment"];
 
-  const positiveWords = [
+  if (averageRating === undefined) {
+    overallSentiment = "mixed";
+  } else if (averageRating >= 4.5) {
+    overallSentiment = "exceptional";
+  } else if (averageRating >= 4) {
+    overallSentiment = "very_good";
+  } else if (averageRating >= 3) {
+    overallSentiment = "average";
+  } else {
+    overallSentiment = "mixed";
+  }
+
+  const positiveKeywords = [
     "clean",
     "comfortable",
     "friendly",
@@ -115,7 +128,7 @@ export function generateDeterministicReviewInsights(
     "peaceful",
   ];
 
-  const negativeWords = [
+  const negativeKeywords = [
     "dirty",
     "noisy",
     "uncomfortable",
@@ -130,89 +143,109 @@ export function generateDeterministicReviewInsights(
     "problem",
   ];
 
-  const reviewText = reviews
+  const allReviewText = reviews
     .map((review) => review.text.toLowerCase())
     .join(" ");
 
-  const findTopics = (words: string[]): string[] =>
-    words
-      .filter((word) => {
-        const escaped = word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-        return new RegExp(`\\b${escaped}\\b`, "i").test(reviewText);
-      })
+  // Split text into words to avoid complicated regular expressions.
+  const reviewWords = new Set(
+    allReviewText.split(/[^a-z0-9]+/i).filter(Boolean)
+  );
+
+  const findKeywords = (keywords: string[]): string[] =>
+    keywords
+      .filter((keyword) => reviewWords.has(keyword))
       .slice(0, 5);
 
-  const positiveTopics = findTopics(positiveWords);
-  const negativeTopics = findTopics(negativeWords);
+  const positiveTopics = findKeywords(positiveKeywords);
+  const negativeTopics = findKeywords(negativeKeywords);
 
-  const ratingSummary =
-    average === undefined
-      ? "The supplied reviews do not contain enough valid ratings to calculate an average."
-      : `The average of ${normalizedRatings.length} supplied review rating(s) is ${average.toFixed(1)} out of 5 after scale normalization.`;
+  const recurringPros = positiveTopics.map(
+    (topic) => `The supplied review text mentions "${topic}".`
+  );
+
+  const recurringCons = negativeTopics.map(
+    (topic) => `The supplied review text mentions "${topic}".`
+  );
+
+  const cleanlinessSummary = positiveTopics.includes("clean")
+    ? "The supplied review text mentions clean. This is a keyword observation, not a verified cleanliness assessment."
+    : "There is insufficient keyword evidence in the supplied reviews to assess cleanliness.";
+
+  const locationConvenience = positiveTopics.includes("convenient")
+    ? "The supplied review text mentions convenient. This does not independently verify the property's location."
+    : "Location convenience cannot be established from the supplied review text alone.";
+
+  const staffAssessment =
+    positiveTopics.includes("friendly") ||
+    positiveTopics.includes("helpful")
+      ? "The supplied review text includes positive staff-related keywords. This is not an independent staff-quality verification."
+      : "There is insufficient supplied review evidence to assess staff service.";
+
+  const valueForMoneyAssessment = positiveTopics.includes("value")
+    ? "The supplied review text mentions value. Actual prices and comparable alternatives have not been independently verified."
+    : "Value for money cannot be established without reliable price and comparison data.";
+
+  const checkBeforeBooking = [
+    "Confirm the current nightly rate and any additional taxes or fees.",
+    "Confirm room availability directly with the property or booking provider.",
+    "Check the dates and original sources of the reviews.",
+  ];
 
   return {
     hotelId: hotel.id,
     hotelName: hotel.name,
     overallSentiment,
-    recurringPros:
-      positiveTopics.length > 0
-        ? positiveTopics.map(
-            (topic) => `The supplied review text mentions "${topic}".`
-          )
-        : [],
-    recurringCons:
-      negativeTopics.length > 0
-        ? negativeTopics.map(
-            (topic) => `The supplied review text mentions "${topic}".`
-          )
-        : [],
-    cleanlinessSummary: positiveTopics.includes("clean")
-      ? 'The supplied review text mentions "clean". This is a keyword observation, not a verified cleanliness assessment.'
-      : "There is insufficient keyword evidence in the supplied reviews to assess cleanliness.",
-    locationConvenience: positiveTopics.includes("convenient")
-      ? 'The supplied review text mentions "convenient". This does not independently verify the property's location.'
-      : "Location convenience cannot be established from the supplied review text alone.",
-    staffAssessment:
-      positiveTopics.includes("friendly") || positiveTopics.includes("helpful")
-        ? "The supplied review text mentions staff-related positive keywords. This is not an independent staff-quality verification."
-        : "There is insufficient supplied review evidence to assess staff service.",
-    valueForMoneyAssessment: positiveTopics.includes("value")
-      ? 'The supplied review text mentions "value". Actual prices and comparable alternatives have not been independently verified.'
-      : "Value for money cannot be established without reliable price and comparison data.",
-    checkBeforeBooking: [
-      "Confirm the current nightly rate and any additional taxes or fees.",
-      "Confirm room availability directly with the property or booking provider.",
-      "Check the dates and original sources of the reviews.",
-    ],
+    recurringPros,
+    recurringCons,
+    cleanlinessSummary,
+    locationConvenience,
+    staffAssessment,
+    valueForMoneyAssessment,
+    checkBeforeBooking,
     isAIGenerated: false,
     analyzedAt: Date.now(),
   };
 }
 
 /**
- * Returns a copy of the provided records without fabricating information.
- * Invalid coordinates are excluded because they cannot be mapped reliably.
+ * Removes accommodation records with invalid identifiers, names,
+ * or geographic coordinates.
  */
 export function getValidAccommodations(
   accommodations: AccommodationItem[]
 ): AccommodationItem[] {
-  return accommodations.filter(
-    (item) =>
-      typeof item.id !== "undefined" &&
+  return accommodations.filter((item) => {
+    const validId =
+      typeof item.id === "string" ||
+      (typeof item.id === "number" && Number.isFinite(item.id));
+
+    const validName =
       typeof item.name === "string" &&
-      item.name.trim().length > 0 &&
+      item.name.trim().length > 0;
+
+    const validLatitude =
       Number.isFinite(item.lat) &&
-      Number.isFinite(item.lon) &&
       item.lat >= -90 &&
-      item.lat <= 90 &&
+      item.lat <= 90;
+
+    const validLongitude =
+      Number.isFinite(item.lon) &&
       item.lon >= -180 &&
-      item.lon <= 180
-  );
+      item.lon <= 180;
+
+    return (
+      validId &&
+      validName &&
+      validLatitude &&
+      validLongitude
+    );
+  });
 }
 
 /**
- * Sorts real supplied records by normalized rating.
- * Listings without ratings are placed after rated listings.
+ * Sorts supplied accommodation records by rating.
+ * Listings without valid ratings appear after rated listings.
  */
 export function sortAccommodationsByRating(
   accommodations: AccommodationItem[]
@@ -221,9 +254,17 @@ export function sortAccommodationsByRating(
     const ratingA = normalizeRating(a.rating, a.ratingScale);
     const ratingB = normalizeRating(b.rating, b.ratingScale);
 
-    if (ratingA === undefined && ratingB === undefined) return 0;
-    if (ratingA === undefined) return 1;
-    if (ratingB === undefined) return -1;
+    if (ratingA === undefined && ratingB === undefined) {
+      return 0;
+    }
+
+    if (ratingA === undefined) {
+      return 1;
+    }
+
+    if (ratingB === undefined) {
+      return -1;
+    }
 
     return ratingB - ratingA;
   });
