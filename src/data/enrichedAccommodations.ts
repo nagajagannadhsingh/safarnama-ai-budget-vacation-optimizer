@@ -1,307 +1,346 @@
-import type { AccommodationItem, AccommodationReviewInsights, GuestReviewItem, CategoryScores } from '../types.ts';
+
+import type {
+  AccommodationItem,
+  AccommodationReviewInsights,
+} from '../types.ts';
 
 /**
- * Curated authentic guest reviews, explicit rating scales, amenities, and safety features.
- * Ensures zero fabricated reviews: every review is attributed to verified platforms and explicitly states its scale.
+ * Trustworthy accommodation data handling.
+ *
+ * This module never invents guest reviews, ratings, review counts,
+ * prices, amenities, safety features, hospital distances, or coordinates.
+ *
+ * Values are preserved only when they are already supplied by the
+ * accommodation data source. Missing information stays unavailable.
  */
 
-// Preset authentic review sets by accommodation type / profile
-const BUDGET_REVIEWS: GuestReviewItem[] = [
-  {
-    author: 'Aarav M.',
-    rating: 4.2,
-    ratingScale: '5.0',
-    date: 'February 2026',
-    text: 'Clean private room, hot water worked reliably every morning, and the staff helped arrange a pre-paid taxi early at 5 AM. Excellent value for backpackers.',
-    source: 'Verified Traveler Review',
-    verifiedGuest: true
-  },
-  {
-    author: 'Elena R.',
-    rating: 8.4,
-    ratingScale: '10.0',
-    date: 'January 2026',
-    text: 'Great location just 5 minutes walk from local eateries and the transit stand. Rooms are basic but spotless, and luggage storage after checkout was seamless.',
-    source: 'Booking.com Verified Guest',
-    verifiedGuest: true
-  },
-  {
-    author: 'Priya K.',
-    rating: 4.0,
-    ratingScale: '5.0',
-    date: 'December 2025',
-    text: 'Felt very safe as a solo female traveler. 24-hour reception desk was always manned, and street outside is well-lit with active shops.',
-    source: 'Google Maps Verified Review',
-    verifiedGuest: true
-  }
-];
+type BudgetTier = 'lowest' | 'balanced' | 'comfort';
 
-const COMFORT_REVIEWS: GuestReviewItem[] = [
-  {
-    author: 'Rajesh & Suman S.',
-    rating: 4.6,
-    ratingScale: '5.0',
-    date: 'February 2026',
-    text: 'Exceptional hospitality. The family room was spacious with whisper-quiet AC and spotless linen. The front desk team assisted us with local temple queues and authentic thali spots.',
-    source: 'Verified Guest Review',
-    verifiedGuest: true
-  },
-  {
-    author: 'Marcus B.',
-    rating: 9.1,
-    ratingScale: '10.0',
-    date: 'January 2026',
-    text: 'Outstanding central location with secure underground parking. Fast Wi-Fi throughout the property which let me work remotely without interruption.',
-    source: 'Booking.com Verified Guest',
-    verifiedGuest: true
-  },
-  {
-    author: 'Deepak V.',
-    rating: 4.5,
-    ratingScale: '5.0',
-    date: 'December 2025',
-    text: 'Breakfast spread was fresh and authentic. Security was tight with keycard-only elevator access and 24/7 CCTV in hallways.',
-    source: 'Google Maps Verified Review',
-    verifiedGuest: true
-  }
-];
+function normalizeRatingToTen(item: AccommodationItem): number | null {
+  const rating = item.rating;
 
-const BOUTIQUE_REVIEWS: GuestReviewItem[] = [
-  {
-    author: 'Ananya T.',
-    rating: 4.8,
-    ratingScale: '5.0',
-    date: 'February 2026',
-    text: 'A tranquil oasis amidst the city bustle. Courtyard architecture is stunning, staff remembered our tea preferences, and the concierge arranged vetted local guide tours.',
-    source: 'Verified Luxury Guest',
-    verifiedGuest: true
-  },
-  {
-    author: 'Claire D.',
-    rating: 9.5,
-    ratingScale: '10.0',
-    date: 'January 2026',
-    text: 'Top tier hygiene and bedding. The property is tucked in a secure heritage street with 24-hour front desk and private airport car service.',
-    source: 'Booking.com Verified Guest',
-    verifiedGuest: true
+  if (typeof rating !== 'number' || !Number.isFinite(rating) || rating < 0) {
+    return null;
   }
-];
+
+  const scale = Number(item.ratingScale);
+
+  if (!Number.isFinite(scale) || scale <= 0) {
+    return null;
+  }
+
+  if (rating > scale) {
+    return null;
+  }
+
+  return (rating / scale) * 10;
+}
+
+function hasValidPrice(item: AccommodationItem): boolean {
+  return (
+    typeof item.nightlyRate === 'number' &&
+    Number.isFinite(item.nightlyRate) &&
+    item.nightlyRate >= 0
+  );
+}
+
+function hasValidDistance(item: AccommodationItem): boolean {
+  return (
+    typeof item.distanceKm === 'number' &&
+    Number.isFinite(item.distanceKm) &&
+    item.distanceKm >= 0
+  );
+}
+
+function hasValidReviewCount(item: AccommodationItem): boolean {
+  return (
+    typeof item.reviewCount === 'number' &&
+    Number.isInteger(item.reviewCount) &&
+    item.reviewCount >= 0
+  );
+}
 
 /**
- * Enriches a list of accommodations with realistic verified review metrics, explicit scales, safety features, and badges
+ * Enrich accommodation records without manufacturing information.
+ *
+ * Existing provider-supplied data is preserved. Missing ratings, prices,
+ * reviews, amenities, and safety details are not filled with guesses.
+ *
+ * Recommendation badges are assigned only when the available records
+ * contain sufficient information to support the relevant comparison.
  */
 export function enrichAccommodationsList(
   accommodations: AccommodationItem[],
   destinationName: string,
-  userBudgetTier: 'lowest' | 'balanced' | 'comfort' = 'balanced'
+  userBudgetTier: BudgetTier = 'balanced'
 ): AccommodationItem[] {
-  if (!accommodations || accommodations.length === 0) return [];
+  // Kept in the function signature for compatibility with existing callers.
+  void destinationName;
+  void userBudgetTier;
 
-  const enriched = accommodations.map((item, index) => {
-    const rawCat = (item.rawCategory || item.category || '').toLowerCase();
-    const nameLower = item.name.toLowerCase();
+  if (!Array.isArray(accommodations) || accommodations.length === 0) {
+    return [];
+  }
 
-    const isHostel = rawCat.includes('hostel') || nameLower.includes('hostel') || nameLower.includes('backpacker');
-    const isResortOrBoutique = rawCat.includes('resort') || nameLower.includes('resort') || nameLower.includes('palace') || nameLower.includes('grand') || nameLower.includes('boutique') || nameLower.includes('fortune') || nameLower.includes('taj');
-    const isMidRange = !isHostel && !isResortOrBoutique;
+  const cleaned = accommodations.map((item) => {
+    const validRating = normalizeRatingToTen(item);
 
-    // Explicit rating scale: 5.0 or 10.0 based on source
-    const useTenScale = (index % 2 === 1);
-    const ratingScale = useTenScale ? '10.0' : '5.0';
-
-    let rating = item.rating;
-    let reviewCount = item.reviewCount;
-
-    if (!rating) {
-      if (isHostel) {
-        rating = useTenScale ? 8.4 : 4.2;
-      } else if (isResortOrBoutique) {
-        rating = useTenScale ? 9.2 : 4.6;
-      } else {
-        rating = useTenScale ? 8.7 : 4.4;
-      }
-    }
-
-    if (!reviewCount) {
-      reviewCount = isHostel ? 180 + (index * 23) : isResortOrBoutique ? 420 + (index * 61) : 290 + (index * 35);
-    }
-
-    // Category breakdown scores
-    const categoryScores: CategoryScores = useTenScale
-      ? {
-          cleanliness: isResortOrBoutique ? 9.4 : isHostel ? 8.3 : 8.8,
-          comfort: isResortOrBoutique ? 9.3 : isHostel ? 8.1 : 8.6,
-          location: Math.min(9.8, 8.5 + (item.distanceKm && item.distanceKm < 3 ? 1.0 : 0.4)),
-          staff: 9.1,
-          valueForMoney: isHostel ? 9.2 : isMidRange ? 8.9 : 8.5,
-          scale: 10
-        }
-      : {
-          cleanliness: isResortOrBoutique ? 4.7 : isHostel ? 4.1 : 4.4,
-          comfort: isResortOrBoutique ? 4.6 : isHostel ? 4.0 : 4.3,
-          location: Math.min(4.9, 4.2 + (item.distanceKm && item.distanceKm < 3 ? 0.5 : 0.2)),
-          staff: 4.5,
-          valueForMoney: isHostel ? 4.6 : isMidRange ? 4.4 : 4.2,
-          scale: 5
-        };
-
-    // Real Guest Review Excerpts
-    const guestReviews = isHostel ? BUDGET_REVIEWS : isResortOrBoutique ? BOUTIQUE_REVIEWS : COMFORT_REVIEWS;
-
-    // Amenities
-    const amenities = [
-      'Free High-Speed Wi-Fi',
-      'Air Conditioning',
-      isHostel ? 'Luggage Lockers' : 'In-Room Safe',
-      'Daily Housekeeping',
-      isResortOrBoutique ? 'Complimentary Breakfast & Pool' : isMidRange ? 'Complimentary Hot Breakfast' : 'Shared Kitchen & Café'
-    ];
-    if (isResortOrBoutique || isMidRange) {
-      amenities.push('Elevator / Lift Access');
-      amenities.push('Power Backup Generator');
-    }
-
-    // Safety Features
-    const safetyFeatures = [
-      '24/7 Front Desk Reception',
-      'CCTV Surveillance in Public Areas',
-      'Electronic Keycard Room Access',
-      'Fire Extinguishers & Smoke Detectors',
-      'Well-lit Pedestrian Street Access',
-      'First Aid Kit at Reception'
-    ];
-    if (isResortOrBoutique || isMidRange) {
-      safetyFeatures.push('On-Call Doctor Available');
-      safetyFeatures.push('Secure Valet / Monitored Parking');
-    }
-
-    // Approximate Nightly Tariff Estimate (Benchmark only)
-    const nightlyRate = isHostel ? 650 : isResortOrBoutique ? 4200 : 1850;
-    const distanceKm = item.distanceKm ?? (1.2 + (index * 0.8));
-    const nearestHospitalKm = Math.round((0.8 + (index * 0.4)) * 10) / 10;
-    const neighborhoodSafetyNote = distanceKm < 2.5
-      ? 'Located in high-footfall central zone with frequent police patrols and active retail stores.'
-      : 'Situated in a quieter residential enclave with direct main-road cab access.';
+    const ratingIsValid = validRating !== null;
+    const reviewCountIsValid = hasValidReviewCount(item);
+    const priceIsValid = hasValidPrice(item);
+    const distanceIsValid = hasValidDistance(item);
 
     return {
       ...item,
-      rating,
-      ratingScale,
-      reviewCount,
-      categoryScores,
-      guestReviews,
-      amenities,
-      safetyFeatures,
-      nightlyRate,
-      distanceKm: Math.round(distanceKm * 10) / 10,
-      nearestHospitalKm,
-      neighborhoodSafetyNote,
-      currency: 'INR'
-    };
+
+      // Keep only ratings that have a valid, explicit scale.
+      rating: ratingIsValid ? item.rating : undefined,
+      ratingScale: ratingIsValid ? item.ratingScale : undefined,
+
+      // Never generate review counts.
+      reviewCount: reviewCountIsValid ? item.reviewCount : undefined,
+
+      // Never generate review text or claim a guest was verified.
+      guestReviews: Array.isArray(item.guestReviews)
+        ? item.guestReviews
+        : undefined,
+
+      // Preserve only supplied category scores.
+      categoryScores: item.categoryScores,
+
+      // Never invent amenities or security features.
+      amenities: Array.isArray(item.amenities)
+        ? item.amenities
+        : undefined,
+
+      safetyFeatures: Array.isArray(item.safetyFeatures)
+        ? item.safetyFeatures
+        : undefined,
+
+      // Never assign a guessed nightly price.
+      nightlyRate: priceIsValid ? item.nightlyRate : undefined,
+
+      // Preserve a total only if it is a valid supplied value.
+      totalStayRate:
+        typeof item.totalStayRate === 'number' &&
+        Number.isFinite(item.totalStayRate) &&
+        item.totalStayRate >= 0
+          ? item.totalStayRate
+          : undefined,
+
+      // Never generate a distance from a list index.
+      distanceKm: distanceIsValid ? item.distanceKm : undefined,
+
+      // Do not invent hospital distance or neighborhood safety claims.
+      nearestHospitalKm:
+        typeof item.nearestHospitalKm === 'number' &&
+        Number.isFinite(item.nearestHospitalKm) &&
+        item.nearestHospitalKm >= 0
+          ? item.nearestHospitalKm
+          : undefined,
+
+      neighborhoodSafetyNote:
+        typeof item.neighborhoodSafetyNote === 'string' &&
+        item.neighborhoodSafetyNote.trim().length > 0
+          ? item.neighborhoodSafetyNote
+          : undefined,
+
+      // Never imply that a price is verified when its source is unknown.
+      currency: item.currency || undefined,
+
+      // Recommendations are recalculated below using available data.
+      aiRecommendationBadge: undefined,
+      aiRecommendationReason: undefined,
+    } satisfies AccommodationItem;
   });
 
-  // Assign AI Recommendation Badges ("Recommended Stays for You")
-  // 1. Best Overall: Top blend of location, rating, and balanced value
-  // 2. Best Budget Stay: Top value for money & lowest price/hostel
-  // 3. Best Reviewed: Highest rating score
-  if (enriched.length > 0) {
-    // Sort by rating normalized to 10
-    const byRating = [...enriched].sort((a, b) => {
-      const aNorm = a.ratingScale === '5.0' ? (a.rating || 0) * 2 : (a.rating || 0);
-      const bNorm = b.ratingScale === '5.0' ? (b.rating || 0) * 2 : (b.rating || 0);
-      return bNorm - aNorm;
+  /*
+   * Best Reviewed:
+   * Requires an available rating and a real, positive review count.
+   * This ranks the supplied records; it does not verify the provider data.
+   */
+  const reviewedCandidates = cleaned
+    .filter(
+      (item) =>
+        normalizeRatingToTen(item) !== null &&
+        hasValidReviewCount(item) &&
+        (item.reviewCount ?? 0) > 0
+    )
+    .sort((a, b) => {
+      const ratingDifference =
+        (normalizeRatingToTen(b) ?? 0) -
+        (normalizeRatingToTen(a) ?? 0);
+
+      if (ratingDifference !== 0) {
+        return ratingDifference;
+      }
+
+      return (b.reviewCount ?? 0) - (a.reviewCount ?? 0);
     });
 
-    // Best Reviewed
-    const bestReviewed = byRating[0];
-    if (bestReviewed) {
-      bestReviewed.aiRecommendationBadge = 'best_reviewed';
-      bestReviewed.aiRecommendationReason = `Highest verified guest satisfaction score (${bestReviewed.rating}/${bestReviewed.ratingScale}) with consistent acclaim for cleanliness and staff hospitality.`;
-    }
+  const bestReviewed = reviewedCandidates[0];
 
-    // Best Budget Stay
-    const budgetCandidates = enriched.filter(e => e.id !== bestReviewed?.id);
-    const bestBudget = budgetCandidates.find(e => (e.rawCategory || '').includes('hostel') || (e.nightlyRate || 0) <= 1200) || budgetCandidates[budgetCandidates.length - 1];
-    if (bestBudget) {
-      bestBudget.aiRecommendationBadge = 'best_budget';
-      bestBudget.aiRecommendationReason = `Outstanding value for money with essential safety features (24/7 reception, lockers) at an economical nightly tariff.`;
-    }
-
-    // Best Overall
-    const remaining = enriched.filter(e => e.id !== bestReviewed?.id && e.id !== bestBudget?.id);
-    const bestOverall = remaining.find(e => (e.distanceKm || 99) <= 2.5) || remaining[0] || (bestReviewed?.aiRecommendationBadge === 'best_reviewed' ? undefined : bestReviewed);
-    if (bestOverall && !bestOverall.aiRecommendationBadge) {
-      bestOverall.aiRecommendationBadge = 'best_overall';
-      bestOverall.aiRecommendationReason = `Prime balance of proximity to key landmarks (~${bestOverall.distanceKm} km), proven safety amenities, and strong guest ratings.`;
-    }
+  if (bestReviewed) {
+    bestReviewed.aiRecommendationBadge = 'best_reviewed';
+    bestReviewed.aiRecommendationReason =
+      'Highest supplied rating among the returned accommodations with a positive review count. Check the original listing for rating scale, review details, and current information.';
   }
 
-  return enriched;
+  /*
+   * Best Budget:
+   * Requires actual supplied nightly prices for comparison.
+   * The badge means lowest listed nightly price, not best quality.
+   */
+  const budgetCandidates = cleaned
+    .filter(
+      (item) =>
+        hasValidPrice(item) &&
+        item.nightlyRate !== undefined &&
+        !(
+          bestReviewed &&
+          String(item.id) === String(bestReviewed.id)
+        )
+    )
+    .sort((a, b) => (a.nightlyRate ?? 0) - (b.nightlyRate ?? 0));
+
+  const bestBudget = budgetCandidates[0];
+
+  if (bestBudget) {
+    bestBudget.aiRecommendationBadge = 'best_budget';
+    bestBudget.aiRecommendationReason =
+      'Lowest supplied nightly price among the remaining returned accommodations. Confirm the room type, taxes, dates, and total stay cost before booking.';
+  }
+
+  /*
+   * Best Overall:
+   * Requires a supplied rating, price, and distance.
+   * Uses a transparent comparison rather than fabricated quality scores.
+   */
+  const overallCandidates = cleaned
+    .filter(
+      (item) =>
+        normalizeRatingToTen(item) !== null &&
+        hasValidPrice(item) &&
+        hasValidDistance(item) &&
+        !item.aiRecommendationBadge
+    )
+    .sort((a, b) => {
+      // Prefer higher supplied ratings, then lower prices, then shorter distance.
+      const ratingDifference =
+        (normalizeRatingToTen(b) ?? 0) -
+        (normalizeRatingToTen(a) ?? 0);
+
+      if (ratingDifference !== 0) {
+        return ratingDifference;
+      }
+
+      const priceDifference =
+        (a.nightlyRate ?? 0) - (b.nightlyRate ?? 0);
+
+      if (priceDifference !== 0) {
+        return priceDifference;
+      }
+
+      return (a.distanceKm ?? Infinity) - (b.distanceKm ?? Infinity);
+    });
+
+  const bestOverall = overallCandidates[0];
+
+  if (bestOverall) {
+    bestOverall.aiRecommendationBadge = 'best_overall';
+    bestOverall.aiRecommendationReason =
+      'Selected using the supplied rating, nightly price, and distance. This is a comparison of available data, not a guarantee of quality, safety, availability, or lowest total trip cost.';
+  }
+
+  return cleaned;
 }
 
 /**
- * Deterministic AI Review Insights Generator
- * Provides synthesized pros, cons, cleanliness, location, and pre-booking checks
+ * Creates transparent review insights from supplied accommodation data.
+ *
+ * This function does not synthesize guest experiences or pretend that
+ * generic statements came from real reviews.
  */
-export function generateDeterministicReviewInsights(item: AccommodationItem): AccommodationReviewInsights {
-  const isBudget = (item.nightlyRate || 0) < 1500 || (item.rawCategory || '').includes('hostel');
-  const isBoutique = (item.nightlyRate || 0) > 3500 || (item.rawCategory || '').includes('resort');
+export function generateDeterministicReviewInsights(
+  item: AccommodationItem
+): AccommodationReviewInsights {
+  const ratingOutOfTen = normalizeRatingToTen(item);
+  const reviewCountIsValid =
+    hasValidReviewCount(item) && (item.reviewCount ?? 0) > 0;
 
-  const recurringPros = isBoutique
-    ? [
-        'Spacious rooms with quiet, efficient air conditioning',
-        'Courteous concierge and proactive luggage assistance',
-        'High standard of bathroom hygiene and premium toiletries',
-        'Secure gated property with 24-hour guarded entrance'
-      ]
-    : isBudget
-    ? [
-        'Unbeatable cost per night for central accommodation',
-        'Reliable hot water showers and clean bed linens',
-        'Helpful front desk ready to assist with early 5 AM checkouts',
-        'Proximity to train/bus station reduces late-night taxi costs'
-      ]
-    : [
-        'Fast and dependable Wi-Fi connection suitable for remote work',
-        'Clean ensuite rooms with regular fresh towels and housekeeping',
-        'Walkable distance to reputable local restaurants and markets',
-        '24/7 front desk with keycard security'
-      ];
+  let overallSentiment: AccommodationReviewInsights['overallSentiment'] =
+    'mixed';
 
-  const recurringCons = isBudget
-    ? [
-        'Rooms facing the main avenue can experience early morning traffic horns',
-        'Basic bathroom layout without separate shower partitions',
-        'Limited elevator capacity during peak morning checkout hours'
-      ]
-    : isBoutique
-    ? [
-        'Hotel restaurant dining tariffs are higher than adjacent neighborhood eateries',
-        'Popular pool or terrace lounge fills quickly on weekend afternoons'
-      ]
-    : [
-        'Parking spaces are limited during weekend festival dates',
-        'Breakfast buffet is straightforward Indian cuisine; continental variety is basic'
-      ];
+  if (ratingOutOfTen !== null && reviewCountIsValid) {
+    if (ratingOutOfTen >= 9) {
+      overallSentiment = 'exceptional';
+    } else if (ratingOutOfTen >= 8) {
+      overallSentiment = 'very_good';
+    } else if (ratingOutOfTen >= 6) {
+      overallSentiment = 'average';
+    }
+  }
+
+  const suppliedDistance = hasValidDistance(item)
+    ? `${item.distanceKm} km`
+    : 'unavailable';
+
+  const suppliedPrice = hasValidPrice(item)
+    ? `${item.currency || 'Currency not specified'} ${item.nightlyRate}`
+    : 'unavailable';
+
+  const suppliedRating =
+    ratingOutOfTen !== null && reviewCountIsValid
+      ? `${item.rating}/${item.ratingScale}, based on ${item.reviewCount} supplied reviews`
+      : 'a reliable rating and review count are unavailable';
+
+  const suppliedAmenities =
+    Array.isArray(item.amenities) && item.amenities.length > 0
+      ? item.amenities.join(', ')
+      : 'amenities have not been supplied by the data source';
+
+  const suppliedSafetyFeatures =
+    Array.isArray(item.safetyFeatures) && item.safetyFeatures.length > 0
+      ? item.safetyFeatures.join(', ')
+      : 'safety features have not been supplied by the data source';
+
+  const suppliedReviews =
+    Array.isArray(item.guestReviews) && item.guestReviews.length > 0
+      ? 'Review entries are present in the supplied record. Check their original sources and verification status before relying on them.'
+      : 'No guest-review excerpts were supplied. No guest experiences have been inferred.';
 
   return {
     hotelId: item.id,
     hotelName: item.name,
-    overallSentiment: (item.rating || 4.2) >= 4.5 || (item.rating || 8) >= 9.0 ? 'exceptional' : 'very_good',
-    recurringPros,
-    recurringCons,
-    cleanlinessSummary: `Consistently commended by guests for clean bedding, sanitized bathrooms, and prompt housekeeping. Category rating: ${item.categoryScores?.cleanliness || 4.4}/${item.categoryScores?.scale || 5}.`,
-    locationConvenience: `Centrally positioned approximately ${item.distanceKm || 1.5} km from key attractions with easy access to auto-rickshaws and app cabs.`,
-    staffAssessment: `Front desk staff praised for responsiveness, fluent local guidance, and round-the-clock check-in support.`,
-    valueForMoneyAssessment: isBudget
-      ? `Exceptional budget fit for cost-conscious travelers seeking verified hygiene without paying resort premiums.`
-      : `Fair tariff given the included amenities, central location, and reliable safety measures.`,
+    overallSentiment,
+    recurringPros: [
+      `Supplied accommodation category: ${item.category || 'unavailable'}.`,
+      `Supplied amenities: ${suppliedAmenities}.`,
+      `Supplied nightly price: ${suppliedPrice}.`,
+    ],
+    recurringCons: [
+      'Guest experiences and property conditions have not been independently verified by this analysis.',
+      'Room availability, taxes, fees, and final booking prices may differ from the supplied listing.',
+      `Supplied review information: ${suppliedReviews}`,
+    ],
+    cleanlinessSummary:
+      'No independent cleanliness assessment is available from this data alone. Check recent reviews from the original listing.',
+    locationConvenience:
+      `Supplied distance: ${suppliedDistance}. This distance has not been independently verified by this analysis.`,
+    staffAssessment:
+      'Staff quality and service experiences cannot be determined without reliable, source-backed guest feedback.',
+    valueForMoneyAssessment:
+      `Supplied nightly price: ${suppliedPrice}. Compare the final price for your dates, room type, taxes, and fees before deciding.`,
     checkBeforeBooking: [
-      'Confirm whether standard check-in is 12:00 PM or 2:00 PM if arriving on an early morning train/flight.',
-      'Request a room away from the street side if you are a light sleeper sensitive to morning horn noise.',
-      'Verify whether AC room type is confirmed if visiting during summer months (April–June).'
+      'Confirm availability for your exact dates with the property or booking provider.',
+      'Verify the final total, taxes, fees, cancellation policy, and room type.',
+      'Check recent guest reviews directly on the original listing.',
+      'Confirm the property address and contact information before travelling.',
+      `Supplied rating information: ${suppliedRating}.`,
+      `Supplied safety information: ${suppliedSafetyFeatures}.`,
+      'Confirm accessibility, check-in times, and included amenities directly with the property.',
     ],
     isAIGenerated: false,
-    analyzedAt: Date.now()
+    analyzedAt: Date.now(),
   };
 }
