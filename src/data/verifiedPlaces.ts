@@ -1,5 +1,5 @@
-import type { PlaceItem, AccommodationItem } from '../types.ts';
-import { getGoogleMapsSearchUrl } from '../utils/googleMaps.ts';
+import type { PlaceItem, AccommodationItem } from '../types.js';
+import { getGoogleMapsSearchUrl } from '../utils/googleMaps.js';
 import { ADDITIONAL_VERIFIED_DESTINATIONS } from './additionalVerifiedDestinations.js'
 import { TEMPLES_DATA, type TempleDetail } from './temples.js';
 
