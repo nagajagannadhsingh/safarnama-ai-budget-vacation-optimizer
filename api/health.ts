@@ -1,5 +1,5 @@
-import { enableCors, sendJson } from '../src/services/serverlessUtils.ts';
-import { isGeminiConfigured, getCircuitBreakerStatus } from '../src/services/geminiService.ts';
+import { enableCors, sendJson } from '../src/services/serverlessUtils.js';
+import { isGeminiConfigured, getCircuitBreakerStatus } from '../src/services/geminiService.js';
 
 export default async function handler(req: any, res: any) {
   if (enableCors(req, res)) return;
