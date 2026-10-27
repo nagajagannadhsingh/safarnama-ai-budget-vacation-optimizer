@@ -8,68 +8,46 @@ interface AccommodationFinderProps {
   onFocusMap?: (accommodation: AccommodationItem) => void;
 }
 
-interface OSMElement {
-  type: string;
-  id: number;
-  lat?: number;
-  lon?: number;
-  center?: { lat: number; lon: number };
-  tags?: Record<string, string>;
-}
-
-interface OSMResponse {
-  elements?: OSMElement[];
-}
-
 interface NominatimResult {
   lat: string;
   lon: string;
   display_name: string;
 }
 
-const OVERPASS_ENDPOINTS = [
-  "https://overpass-api.de/api/interpreter",
-  "https://overpass.kumi.systems/api/interpreter",
-];
-
-const NOMINATIM_URL =
-  "https://nominatim.openstreetmap.org/search";
-
-async function fetchWithTimeout(
-  url: string,
-  options: RequestInit = {},
-  timeoutMs = 15000
-): Promise<Response> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-
-  try {
-    return await fetch(url, {
-      ...options,
-      signal: controller.signal,
-    });
-  } catch (error) {
-    if (controller.signal.aborted) {
-      throw new Error("The request timed out. Please retry.");
-    }
-    throw error;
-  } finally {
-    clearTimeout(timer);
-  }
+interface AccommodationApiResponse {
+  accommodations?: AccommodationItem[];
+  message?: string;
+  error?: string;
+  source?: string;
 }
 
-async function fetchJson<T>(
+async function requestJson<T>(
   url: string,
-  options: RequestInit = {},
-  timeoutMs = 15000
+  timeoutMs = 12000
 ): Promise<T> {
-  const response = await fetchWithTimeout(url, options, timeoutMs);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
-  if (!response.ok) {
-    throw new Error(`Service returned HTTP ${response.status}.`);
+  try {
+    const response = await fetch(url, {
+      signal: controller.signal,
+      headers: { Accept: "application/json" },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Request failed with HTTP ${response.status}.`);
+    }
+
+    return (await response.json()) as T;
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new Error("The request timed out. Please try again.");
+    }
+
+    throw error;
+  } finally {
+    clearTimeout(timeout);
   }
-
-  return (await response.json()) as T;
 }
 
 async function geocodeDestination(
@@ -81,15 +59,12 @@ async function geocodeDestination(
     limit: "1",
   });
 
-  const results = await fetchJson<NominatimResult[]>(
-    `${NOMINATIM_URL}?${params.toString()}`,
-    { headers: { Accept: "application/json" } }
+  const results = await requestJson<NominatimResult[]>(
+    `https://nominatim.openstreetmap.org/search?${params.toString()}`
   );
 
   if (!Array.isArray(results) || results.length === 0) {
-    throw new Error(
-      `No matching location was found for "${destination}".`
-    );
+    throw new Error(`No mapped location was found for "${destination}".`);
   }
 
   const lat = Number(results[0].lat);
@@ -103,238 +78,179 @@ async function geocodeDestination(
     lon < -180 ||
     lon > 180
   ) {
-    throw new Error("The location service returned invalid coordinates.");
+    throw new Error("The geocoding service returned invalid coordinates.");
   }
 
   return { lat, lon };
 }
 
-function makeOverpassQuery(lat: number, lon: number): string {
-  return `
-[out:json][timeout:12];
-(
-  nwr["tourism"~"^(hotel|hostel|guest_house|motel|apartment|chalet|resort|alpine_hut|camp_site|caravan_site)$"]["name"](around:10000,${lat},${lon});
-  nwr["building"="hotel"]["name"](around:10000,${lat},${lon});
-);
-out center tags;
-`;
+function validAccommodation(
+  item: AccommodationItem
+): boolean {
+  return Boolean(
+    item &&
+      typeof item.name === "string" &&
+      item.name.trim() &&
+      Number.isFinite(item.lat) &&
+      Number.isFinite(item.lon) &&
+      item.lat >= -90 &&
+      item.lat <= 90 &&
+      item.lon >= -180 &&
+      item.lon <= 180
+  );
 }
 
-async function fetchAccommodation(
-  lat: number,
-  lon: number
-): Promise<OSMElement[]> {
-  const query = makeOverpassQuery(lat, lon);
-  let lastError: unknown;
-
-  for (const endpoint of OVERPASS_ENDPOINTS) {
-    try {
-      const data = await fetchJson<OSMResponse>(
-        endpoint,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
-            Accept: "application/json",
-          },
-          body: new URLSearchParams({ data: query }).toString(),
-        },
-        18000
-      );
-
-      if (!Array.isArray(data.elements)) {
-        throw new Error("The accommodation service returned invalid data.");
-      }
-
-      return data.elements;
-    } catch (error) {
-      lastError = error;
-    }
-  }
-
-  throw lastError instanceof Error
-    ? lastError
-    : new Error("Accommodation data is temporarily unavailable.");
+function mapsUrl(item: AccommodationItem): string {
+  return (
+    item.googleMapsUrl ||
+    `https://www.google.com/maps/search/?api=1&query=${item.lat},${item.lon}`
+  );
 }
 
-function categoryFromTags(tags: Record<string, string>): string {
-  const categories: Record<string, string> = {
-    hotel: "Hotel",
-    hostel: "Hostel",
-    guest_house: "Guesthouse",
-    motel: "Motel",
-    apartment: "Apartment",
-    chalet: "Chalet",
-    resort: "Resort",
-    alpine_hut: "Mountain hut",
-    camp_site: "Campsite",
-    caravan_site: "Caravan site",
-  };
-
-  return categories[tags.tourism] ||
-    (tags.building === "hotel" ? "Hotel" : "Accommodation");
+function officialWebsiteSearch(
+  name: string,
+  destination: string
+): string {
+  return `https://www.google.com/search?q=${encodeURIComponent(
+    `"${name}" ${destination} official website`
+  )}`;
 }
 
-function addressFromTags(
-  tags: Record<string, string>
-): string | undefined {
-  const parts = [
-    [tags["addr:housenumber"], tags["addr:street"]]
-      .filter(Boolean)
-      .join(" "),
-    tags["addr:suburb"],
-    tags["addr:city"] || tags["addr:town"] || tags["addr:village"],
-    tags["addr:state"],
-    tags["addr:postcode"],
-    tags["addr:country"],
-  ].filter(Boolean);
-
-  return parts.join(", ") || tags["addr:full"] || undefined;
-}
-
-function toAccommodation(
-  element: OSMElement
-): AccommodationItem | null {
-  const tags = element.tags ?? {};
-  const name = tags.name?.trim();
-  const lat = element.lat ?? element.center?.lat;
-  const lon = element.lon ?? element.center?.lon;
-
-  if (
-    !name ||
-    lat === undefined ||
-    lon === undefined ||
-    !Number.isFinite(lat) ||
-    !Number.isFinite(lon) ||
-    lat < -90 ||
-    lat > 90 ||
-    lon < -180 ||
-    lon > 180
-  ) {
-    return null;
-  }
-
-  const website = tags.website || tags["contact:website"] || null;
-  const phone = tags.phone || tags["contact:phone"] || null;
-
-  return {
-    id: `osm-${element.type}-${element.id}`,
-    placeId: element.id,
-    name,
-    category: categoryFromTags(tags),
-    rawCategory: tags.tourism || tags.building || "accommodation",
-    lat,
-    lon,
-    address: addressFromTags(tags),
-    website,
-    phone,
-    source: "OpenStreetMap",
-    googleMapsUrl:
-      `https://www.google.com/maps/search/?api=1&query=${lat},${lon}`,
-    priceDisclaimer: "Price unavailable — contact the property.",
-  };
-}
-
-function getWebsiteUrl(website: string): string {
-  const value = website.trim();
-
-  return /^https?:\/\//i.test(value)
-    ? value
-    : `https://${value}`;
+function websiteUrl(website: string): string {
+  return /^https?:\/\//i.test(website)
+    ? website
+    : `https://${website}`;
 }
 
 export function AccommodationFinder({
-  accommodations: _accommodations,
+  accommodations,
   destinationName,
   onFocusMap,
 }: AccommodationFinderProps) {
+  const destination = destinationName.trim();
+
   const [results, setResults] = useState<AccommodationItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [hasSearched, setHasSearched] = useState(false);
-  const [retryCount, setRetryCount] = useState(0);
+  const [message, setMessage] = useState("");
+  const [retryKey, setRetryKey] = useState(0);
 
-  const requestId = useRef(0);
-  const destination = destinationName.trim();
+  const requestNumber = useRef(0);
 
-  const searchHotels = useCallback(async () => {
-    const currentRequest = ++requestId.current;
+  const loadAccommodations = useCallback(async () => {
+    const requestId = ++requestNumber.current;
 
     if (!destination) {
       setResults([]);
-      setLoading(false);
       setError("");
-      setHasSearched(false);
+      setMessage("Select a destination to view nearby accommodation.");
+      setLoading(false);
       return;
     }
 
     setLoading(true);
     setError("");
-    setHasSearched(true);
-    setResults([]);
+    setMessage("");
 
     try {
+      // Resolve the selected destination to actual geographic coordinates.
       const { lat, lon } = await geocodeDestination(destination);
 
-      if (currentRequest !== requestId.current) return;
+      if (requestId !== requestNumber.current) return;
 
-      const elements = await fetchAccommodation(lat, lon);
+      // Use SAFARNAMA AI's existing backend route.
+      const params = new URLSearchParams({
+        lat: String(lat),
+        lon: String(lon),
+        destination,
+      });
 
-      if (currentRequest !== requestId.current) return;
+      const data = await requestJson<AccommodationApiResponse>(
+        `/api/accommodations?${params.toString()}`,
+        20000
+      );
 
-      const unique = new Map<string, AccommodationItem>();
+      if (requestId !== requestNumber.current) return;
 
-      for (const element of elements) {
-        const item = toAccommodation(element);
-        if (item) unique.set(String(item.id), item);
+      if (!Array.isArray(data.accommodations)) {
+        throw new Error(
+          data.error ||
+            data.message ||
+            "The accommodation API returned an unexpected response."
+        );
       }
 
-      const sorted = Array.from(unique.values()).sort((a, b) =>
-        a.name.localeCompare(b.name)
+      const validResults = data.accommodations.filter(validAccommodation);
+
+      // Deduplicate by provider ID where available, otherwise by name and location.
+      const unique = new Map<string, AccommodationItem>();
+
+      for (const item of validResults) {
+        const key = item.id != null
+          ? String(item.id)
+          : `${item.name.toLowerCase()}-${item.lat}-${item.lon}`;
+
+        if (!unique.has(key)) unique.set(key, item);
+      }
+
+      const sorted = Array.from(unique.values()).sort(
+        (a, b) => (a.distanceKm ?? Infinity) - (b.distanceKm ?? Infinity)
       );
 
       setResults(sorted);
 
       if (sorted.length === 0) {
-        setError(
-          `No named accommodation listings were found in the available OpenStreetMap data near "${destination}". Try again later or search a nearby town.`
+        setMessage(
+          data.message ||
+            `No accommodation listings were returned for ${destination}. OpenStreetMap coverage may be incomplete.`
         );
       }
     } catch (err) {
-      if (currentRequest !== requestId.current) return;
+      if (requestId !== requestNumber.current) return;
 
       setError(
         err instanceof Error
           ? err.message
-          : "Unable to load accommodation. Please try again."
+          : "Accommodation could not be loaded."
+      );
+
+      // Preserve real records already supplied by the parent.
+      setResults((current) =>
+        current.length > 0
+          ? current
+          : accommodations.filter(validAccommodation)
       );
     } finally {
-      if (currentRequest === requestId.current) {
+      if (requestId === requestNumber.current) {
         setLoading(false);
       }
     }
-  }, [destination]);
+  }, [destination, accommodations]);
 
-  // Automatically load hotel cards when a destination becomes available.
   useEffect(() => {
     if (!destination) {
-      requestId.current++;
+      requestNumber.current++;
       setResults([]);
       setLoading(false);
       setError("");
-      setHasSearched(false);
+      setMessage("Select a destination to view nearby accommodation.");
       return;
     }
 
+    // Show existing genuine records immediately while refreshing.
+    setResults(accommodations.filter(validAccommodation));
+
     const timer = setTimeout(() => {
-      void searchHotels();
-    }, 500);
+      void loadAccommodations();
+    }, 400);
 
     return () => {
       clearTimeout(timer);
-      requestId.current++;
+      requestNumber.current++;
     };
-  }, [destination, retryCount, searchHotels]);
+  }, [destination, retryKey, loadAccommodations, accommodations]);
+
+  const displayedResults = results;
 
   return (
     <section className="space-y-5">
@@ -345,175 +261,190 @@ export function AccommodationFinder({
               Hotels & Accommodation
             </h2>
             <p className="mt-1 text-sm text-gray-600">
-              Real mapped accommodation near your selected destination.
+              Real mapped properties near your selected destination.
             </p>
             <p className="mt-1 text-sm text-gray-500">
-              Destination: {destination || "Select a destination"}
+              Destination: {destination || "Not selected"}
             </p>
           </div>
 
           <button
             type="button"
-            onClick={() => setRetryCount((count) => count + 1)}
-            disabled={loading || !destination}
+            onClick={() => setRetryKey((value) => value + 1)}
+            disabled={!destination || loading}
             className="rounded-xl bg-[#4B294F] px-5 py-3 text-sm font-semibold text-white hover:bg-[#633968] disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {loading ? "Loading hotels…" : "Refresh Hotels"}
+            {loading ? "Refreshing…" : "Refresh Hotels"}
           </button>
         </div>
 
         <p className="mt-3 text-xs leading-5 text-gray-500">
-          No hotel API key required. Results depend on OpenStreetMap coverage.
-          A mapped listing does not confirm that a property is operating or
-          accepting reservations.
+          Data is retrieved through SAFARNAMA AI's existing accommodation
+          endpoint. Map listings do not confirm current operation or
+          reservation availability.
         </p>
       </div>
 
       {loading && (
-        <div role="status" className="rounded-2xl border bg-white p-8 text-center">
-          <div className="mx-auto h-8 w-8 animate-spin rounded-full border-4 border-purple-100 border-t-[#9B72CF]" />
-          <p className="mt-3 font-medium text-[#4B294F]">
-            Finding accommodation near {destination}…
+        <div
+          role="status"
+          aria-live="polite"
+          className="rounded-2xl border border-purple-100 bg-white p-6"
+        >
+          <p className="font-medium text-[#4B294F]">
+            Loading accommodation near {destination}…
           </p>
           <p className="mt-1 text-sm text-gray-500">
-            The public map services may take a few seconds to respond.
+            {displayedResults.length > 0
+              ? "Showing available records while checking for updates."
+              : "Waiting for the location and accommodation services."}
           </p>
         </div>
       )}
 
-      {!loading && error && (
-        <div role="alert" className="rounded-2xl border border-red-200 bg-red-50 p-5">
-          <h3 className="font-semibold text-red-800">
-            {results.length === 0 ? "Accommodation unavailable" : "Search issue"}
-          </h3>
+      {error && (
+        <div
+          role="alert"
+          className="rounded-2xl border border-red-200 bg-red-50 p-5"
+        >
+          <p className="font-semibold text-red-800">
+            Accommodation could not be refreshed
+          </p>
           <p className="mt-2 text-sm leading-6 text-red-700">{error}</p>
           <button
             type="button"
-            onClick={() => setRetryCount((count) => count + 1)}
-            disabled={!destination}
-            className="mt-4 rounded-lg bg-red-700 px-4 py-2 text-sm font-semibold text-white hover:bg-red-800 disabled:opacity-50"
+            onClick={() => setRetryKey((value) => value + 1)}
+            disabled={loading || !destination}
+            className="mt-4 rounded-lg bg-red-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
           >
-            Retry Search
+            Retry
           </button>
         </div>
       )}
 
-      {!loading && !error && hasSearched && results.length === 0 && (
-        <p className="rounded-xl border bg-white p-5 text-sm text-gray-600">
-          No accommodation results are available for this search.
-        </p>
+      {message && !loading && (
+        <div className="rounded-2xl border border-purple-100 bg-white p-5">
+          <p className="text-sm leading-6 text-gray-700">{message}</p>
+          {destination && (
+            <button
+              type="button"
+              onClick={() => setRetryKey((value) => value + 1)}
+              className="mt-3 rounded-lg border border-[#9B72CF] px-4 py-2 text-sm font-semibold text-[#4B294F] hover:bg-purple-50"
+            >
+              Search Again
+            </button>
+          )}
+        </div>
       )}
 
-      {!loading && results.length > 0 && (
+      {displayedResults.length > 0 && (
         <>
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-3">
             <h3 className="font-semibold text-[#4B294F]">
               Accommodation listings
             </h3>
             <span className="rounded-full bg-purple-50 px-3 py-1 text-xs font-medium text-[#4B294F]">
-              {results.length} properties
+              {displayedResults.length} properties
             </span>
           </div>
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            {results.map((hotel) => {
-              const mapsUrl =
-                hotel.googleMapsUrl ||
-                `https://www.google.com/maps/search/?api=1&query=${hotel.lat},${hotel.lon}`;
+            {displayedResults.map((hotel) => (
+              <article
+                key={String(hotel.id)}
+                className="flex flex-col rounded-2xl border border-purple-100 bg-white p-5 shadow-sm transition hover:shadow-md"
+              >
+                <span className="w-fit rounded-full bg-purple-50 px-3 py-1 text-xs font-medium text-[#4B294F]">
+                  {hotel.category || "Accommodation"}
+                </span>
 
-              const websiteSearchUrl =
-                `https://www.google.com/search?q=${encodeURIComponent(
-                  `${hotel.name} ${destination} official website`
-                )}`;
+                <h4 className="mt-3 text-lg font-bold text-gray-900">
+                  {hotel.name}
+                </h4>
 
-              return (
-                <article
-                  key={String(hotel.id)}
-                  className="flex flex-col rounded-2xl border border-purple-100 bg-white p-5 shadow-sm transition hover:shadow-md"
-                >
-                  <span className="w-fit rounded-full bg-purple-50 px-3 py-1 text-xs font-medium text-[#4B294F]">
-                    {hotel.category}
-                  </span>
+                {hotel.address && (
+                  <p className="mt-2 text-sm leading-5 text-gray-600">
+                    <strong>Address:</strong> {hotel.address}
+                  </p>
+                )}
 
-                  <h4 className="mt-3 text-lg font-bold text-gray-900">
-                    {hotel.name}
-                  </h4>
-
-                  {hotel.address && (
-                    <p className="mt-2 text-sm leading-5 text-gray-600">
-                      <strong>Address:</strong> {hotel.address}
+                {hotel.distanceKm != null &&
+                  Number.isFinite(hotel.distanceKm) && (
+                    <p className="mt-2 text-sm text-gray-600">
+                      {hotel.distanceKm.toFixed(1)} km from the destination
+                      reference point
                     </p>
                   )}
 
-                  <p className="mt-2 text-xs text-gray-500">
-                    Source: OpenStreetMap
+                {hotel.phone && (
+                  <p className="mt-2 break-words text-sm text-gray-700">
+                    <strong>Mapped phone:</strong> {hotel.phone}
                   </p>
+                )}
 
-                  <div className="mt-4 rounded-lg bg-gray-50 p-3 text-sm text-gray-700">
-                    <strong>Price unavailable — contact the property.</strong>
-                    <p className="mt-1 text-xs leading-5 text-gray-500">
-                      Room prices and reservation availability are not
-                      confirmed by this map listing.
-                    </p>
-                  </div>
+                <div className="mt-4 rounded-lg bg-gray-50 p-3 text-sm text-gray-700">
+                  <strong>Price unavailable — contact the property.</strong>
+                  <p className="mt-1 text-xs leading-5 text-gray-500">
+                    Current prices and room availability have not been
+                    confirmed by this map listing.
+                  </p>
+                </div>
 
-                  <div className="mt-auto flex flex-col gap-2 pt-4">
-                    {hotel.website ? (
-                      <a
-                        href={getWebsiteUrl(hotel.website)}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="rounded-lg bg-[#4B294F] px-3 py-3 text-center text-sm font-semibold text-white hover:bg-[#633968]"
-                      >
-                        Open Listed Website
-                      </a>
-                    ) : (
-                      <a
-                        href={websiteSearchUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="rounded-lg border border-[#9B72CF] px-3 py-3 text-center text-sm font-semibold text-[#4B294F] hover:bg-purple-50"
-                      >
-                        Search for Official Website
-                      </a>
-                    )}
-
-                    {hotel.phone && (
-                      <p className="break-words text-sm text-gray-700">
-                        <strong>Mapped phone:</strong> {hotel.phone}
-                      </p>
-                    )}
-
+                <div className="mt-auto flex flex-col gap-2 pt-4">
+                  {hotel.website ? (
                     <a
-                      href={mapsUrl}
+                      href={websiteUrl(hotel.website)}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="rounded-lg border border-gray-200 px-3 py-3 text-center text-sm font-semibold text-gray-800 hover:bg-gray-50"
+                      className="rounded-lg bg-[#4B294F] px-3 py-3 text-center text-sm font-semibold text-white hover:bg-[#633968]"
                     >
-                      View Location on Google Maps
+                      Open Listed Website
                     </a>
+                  ) : (
+                    <a
+                      href={officialWebsiteSearch(hotel.name, destination)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="rounded-lg border border-[#9B72CF] px-3 py-3 text-center text-sm font-semibold text-[#4B294F] hover:bg-purple-50"
+                    >
+                      Search for Official Website
+                    </a>
+                  )}
 
-                    {onFocusMap && (
-                      <button
-                        type="button"
-                        onClick={() => onFocusMap(hotel)}
-                        className="rounded-lg border border-gray-200 px-3 py-3 text-sm font-semibold text-gray-800 hover:bg-gray-50"
-                      >
-                        Show on App Map
-                      </button>
-                    )}
-                  </div>
-                </article>
-              );
-            })}
+                  <a
+                    href={mapsUrl(hotel)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="rounded-lg border border-gray-200 px-3 py-3 text-center text-sm font-semibold text-gray-800 hover:bg-gray-50"
+                  >
+                    View Location on Google Maps
+                  </a>
+
+                  {onFocusMap && (
+                    <button
+                      type="button"
+                      onClick={() => onFocusMap(hotel)}
+                      className="rounded-lg border border-gray-200 px-3 py-3 text-sm font-semibold text-gray-800 hover:bg-gray-50"
+                    >
+                      Show on App Map
+                    </button>
+                  )}
+                </div>
+
+                <p className="mt-3 text-xs text-gray-500">
+                  Source: {hotel.source || "Accommodation data provider"}.
+                  Listings may be incomplete or outdated.
+                </p>
+              </article>
+            ))}
           </div>
         </>
       )}
 
       <p className="text-xs leading-5 text-gray-500">
-        Map data © OpenStreetMap contributors. Websites are shown only when
-        mapped in the data; search results for missing websites are not
-        guaranteed to be official. Listings may be incomplete or outdated.
+        OpenStreetMap contributors provide mapped geographic information.
+        Official websites are linked directly only when present in the data;
+        search results for missing websites are not guaranteed to be official.
       </p>
     </section>
   );
