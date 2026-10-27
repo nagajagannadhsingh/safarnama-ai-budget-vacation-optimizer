@@ -1,910 +1,664 @@
 
-import React, { useState } from 'react';
-import { AccommodationItem, AccommodationReviewInsights } from '../types';
+import React, { useMemo, useState } from "react";
+import type {
+  AccommodationItem,
+  AccommodationReviewInsights,
+  GuestReviewItem,
+} from "../types";
 import {
-  Bed,
-  MapPin,
-  Globe,
-  Info,
-  Filter,
-  ExternalLink,
-  ShieldCheck,
-  Compass,
-  Search,
-  Star,
-  Award,
-  Sparkles,
-  Scale,
-  X,
-  CheckCircle2,
-  HeartPulse,
-  ThumbsUp,
-  AlertCircle,
-  Loader2
-} from 'lucide-react';
-import { getGoogleMapsSearchUrl } from '../utils/googleMaps';
-import { generateDeterministicReviewInsights } from '../data/enrichedAccommodations';
+  generateDeterministicReviewInsights,
+  getValidAccommodations,
+  sortAccommodationsByRating,
+} from "../data/enrichedAccommodations";
 
 interface AccommodationFinderProps {
-  accommodations: AccommodationItem[];
-  destinationName: string;
-  onFocusMap?: (item: AccommodationItem) => void;
+  accommodations?: AccommodationItem[];
+  destination?: string;
+  onSelectAccommodation?: (item: AccommodationItem) => void;
 }
 
-const getSafeWebsiteUrl = (website?: string | null): string | null => {
-  if (!website || typeof website !== 'string') return null;
+type Tab = "overview" | "reviews" | "location";
 
+const currencyFormatter = (amount: number, currency = "INR") => {
   try {
-    const url = new URL(website.trim());
-
-    if (url.protocol !== 'https:' && url.protocol !== 'http:') {
-      return null;
-    }
-
-    return url.href;
+    return new Intl.NumberFormat("en-IN", {
+      style: "currency",
+      currency,
+      maximumFractionDigits: 0,
+    }).format(amount);
   } catch {
-    return null;
+    return `${currency} ${amount.toLocaleString("en-IN")}`;
   }
 };
 
-export const AccommodationFinder: React.FC<AccommodationFinderProps> = ({
-  accommodations,
-  destinationName,
-  onFocusMap
-}) => {
-  const [selectedCategory, setSelectedCategory] = useState<string>('all');
-  const [maxDistance, setMaxDistance] = useState<number>(30);
-  const [activeCardTab, setActiveCardTab] = useState<
-    Record<string | number, 'experience' | 'location' | 'safety'>
-  >({});
-  const [selectedForInsights, setSelectedForInsights] =
-    useState<AccommodationItem | null>(null);
-  const [loadingInsights, setLoadingInsights] = useState(false);
-  const [currentInsights, setCurrentInsights] =
-    useState<AccommodationReviewInsights | null>(null);
-  const [comparedHotelIds, setComparedHotelIds] = useState<(string | number)[]>([]);
-  const [showComparisonModal, setShowComparisonModal] = useState(false);
+const ratingOutOfFive = (
+  rating?: number,
+  scale?: string
+): number | undefined => {
+  if (
+    typeof rating !== "number" ||
+    !Number.isFinite(rating) ||
+    rating < 0
+  ) {
+    return undefined;
+  }
 
-  const filtered = accommodations.filter(item => {
-    if (selectedCategory !== 'all') {
-      const raw = item.rawCategory?.toLowerCase() || '';
-      const cat = item.category?.toLowerCase() || '';
+  const parsedScale = Number(scale);
 
-      if (!raw.includes(selectedCategory) && !cat.includes(selectedCategory)) {
-        return false;
-      }
+  if (Number.isFinite(parsedScale) && parsedScale > 0 && parsedScale !== 5) {
+    return Math.min(5, (rating / parsedScale) * 5);
+  }
+
+  return Math.min(5, rating);
+};
+
+const safeExternalUrl = (value?: string | null): string | undefined => {
+  if (!value) return undefined;
+
+  try {
+    const url = new URL(value);
+    if (url.protocol === "https:" || url.protocol === "http:") {
+      return url.toString();
     }
+  } catch {
+    return undefined;
+  }
 
-    if (item.distanceKm !== undefined && item.distanceKm > maxDistance) {
-      return false;
-    }
+  return undefined;
+};
 
-    return true;
-  });
+const mapsUrl = (item: AccommodationItem): string => {
+  const suppliedUrl = safeExternalUrl(item.googleMapsUrl);
 
-  const recommendedStays = accommodations.filter(a =>
-    Boolean(a.aiRecommendationBadge)
-  );
+  if (suppliedUrl) return suppliedUrl;
 
-  const toggleCompare = (id: string | number) => {
-    setComparedHotelIds(prev => {
-      if (prev.includes(id)) {
-        return prev.filter(x => x !== id);
-      }
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+    `${item.name} ${item.address ?? item.city ?? ""}`
+  )}`;
+};
 
-      if (prev.length >= 4) return prev;
+const reviewDate = (date?: string): string => {
+  if (!date) return "Date not provided";
 
-      return [...prev, id];
-    });
-  };
+  const parsed = new Date(date);
+  if (Number.isNaN(parsed.getTime())) return date;
 
-  const openReviewInsights = async (item: AccommodationItem) => {
-    setSelectedForInsights(item);
-    setLoadingInsights(true);
-    setCurrentInsights(null);
+  return parsed.toLocaleDateString();
+};
 
-    try {
-      const res = await fetch('/api/accommodations', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          accommodation: item,
-          destination: destinationName
-        })
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-
-        if (data.insights) {
-          setCurrentInsights(data.insights);
-          return;
-        }
-      }
-    } catch {
-      // Use the existing fallback below if the request fails.
-    } finally {
-      setLoadingInsights(false);
-    }
-
-    setCurrentInsights(generateDeterministicReviewInsights(item));
-  };
-
-  const getCardTab = (id: string | number) =>
-    activeCardTab[id] || 'experience';
-
-  const setCardTab = (
-    id: string | number,
-    tab: 'experience' | 'location' | 'safety'
-  ) => {
-    setActiveCardTab(prev => ({ ...prev, [id]: tab }));
-  };
-
-  const googleHotelsSearchUrl =
-    `https://www.google.com/travel/hotels?q=${encodeURIComponent(
-      `hotels in ${destinationName}`
-    )}`;
-
-  const comparedHotels = accommodations.filter(a =>
-    comparedHotelIds.includes(a.id)
-  );
+const ReviewCard: React.FC<{ review: GuestReviewItem }> = ({ review }) => {
+  const rating = ratingOutOfFive(review.rating, review.ratingScale);
 
   return (
-    <div className="bg-white rounded-3xl border border-[#D8C3A5] p-6 sm:p-8 md:p-10 shadow-sm font-sans space-y-8 relative">
-      {/* Section Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-[#D8C3A5]">
+    <article className="rounded-xl border border-[#E7DCEC] bg-white p-4">
+      <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
-          <div className="text-xs font-heading font-medium uppercase tracking-widest text-[#4B294F] mb-1 flex items-center gap-1.5">
-            <Bed className="w-4 h-4 text-[#78C9D0]" />
-            <span>Accommodation & Guest Information</span>
-          </div>
-
-          <h2 className="text-2xl sm:text-3xl font-heading font-bold text-[#4B294F]">
-            Accommodation Options
-          </h2>
-
-          <p className="text-xs sm:text-sm text-[#77717F] mt-1 max-w-2xl leading-relaxed">
-            Explore lodging listings, locations, available website links, and
-            estimated costs. Confirm details directly with each property before
-            booking.
+          <p className="font-semibold text-[#4B294F]">
+            {review.author?.trim() || "Guest"}
+          </p>
+          <p className="text-xs text-gray-500">
+            {reviewDate(review.date)}
           </p>
         </div>
 
-        <div className="flex items-start gap-2.5 p-3.5 bg-[#FAF7F0] border border-[#D8C3A5] rounded-2xl text-xs text-[#77717F] max-w-sm">
-          <Info className="w-4 h-4 text-[#78C9D0] shrink-0 mt-0.5" />
-          <div>
-            <strong className="text-[#4B294F]">Data transparency:</strong>{' '}
-            Website links appear only when supplied and valid. Listings do not
-            guarantee current prices, room availability, or official website
-            status.
-          </div>
-        </div>
+        {rating !== undefined && (
+          <span className="rounded-lg bg-[#FAF7F0] px-3 py-1 text-sm font-semibold text-[#4B294F]">
+            ★ {rating.toFixed(1)}/5
+          </span>
+        )}
       </div>
 
-      {/* Recommended Stays */}
-      {recommendedStays.length > 0 && (
-        <div className="space-y-3">
-          <h3 className="text-base font-heading font-bold text-[#4B294F] flex items-center gap-2">
-            <Award className="w-4 h-4 text-[#C2185B]" />
-            <span>Recommended Stays</span>
-          </h3>
+      <p className="mt-3 whitespace-pre-wrap break-words text-sm leading-6 text-gray-700">
+        {review.text}
+      </p>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {recommendedStays.map(rec => {
-              const badgeLabel =
-                rec.aiRecommendationBadge === 'best_overall'
-                  ? 'Best Overall Stay'
-                  : rec.aiRecommendationBadge === 'best_budget'
-                    ? 'Best Budget Stay'
-                    : 'Highest Rated';
+      <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-gray-500">
+        <span>Source: {review.source}</span>
+        {review.verifiedGuest === true && (
+          <span className="rounded-full bg-emerald-50 px-2 py-1 text-emerald-700">
+            Verified guest (source supplied)
+          </span>
+        )}
+      </div>
+    </article>
+  );
+};
 
-              const website = getSafeWebsiteUrl(rec.website);
+const InsightSection: React.FC<{
+  title: string;
+  items: string[];
+}> = ({ title, items }) => {
+  if (items.length === 0) return null;
 
-              return (
-                <div
-                  key={`rec-${rec.id}`}
-                  className="p-4 rounded-2xl border border-[#D8C3A5] bg-[#FAF7F0] flex flex-col justify-between hover:shadow-md transition-all"
-                >
-                  <div>
-                    <span className="text-[10px] font-heading font-bold uppercase tracking-wider px-2.5 py-1 rounded-lg bg-[#4B294F] text-white">
-                      {badgeLabel}
-                    </span>
+  return (
+    <section>
+      <h4 className="font-semibold text-[#4B294F]">{title}</h4>
+      <ul className="mt-2 list-disc space-y-1 pl-5 text-sm leading-6 text-gray-700">
+        {items.map((item, index) => (
+          <li key={`${title}-${index}`}>{item}</li>
+        ))}
+      </ul>
+    </section>
+  );
+};
 
-                    <h4 className="font-heading font-bold text-[#4B294F] text-sm mt-3">
-                      {rec.name}
-                    </h4>
+const AccommodationCard: React.FC<{
+  item: AccommodationItem;
+  onSelect?: (item: AccommodationItem) => void;
+}> = ({ item, onSelect }) => {
+  const [activeTab, setActiveTab] = useState<Tab>("overview");
+  const [showInsights, setShowInsights] = useState(false);
 
-                    {rec.rating != null && (
-                      <p className="text-xs text-[#77717F] mt-1">
-                        <Star className="w-3 h-3 inline text-amber-500" />{' '}
-                        {rec.rating} / {rec.ratingScale || '5.0'}
-                      </p>
-                    )}
+  const reviews = Array.isArray(item.guestReviews) ? item.guestReviews : [];
+  const rating = ratingOutOfFive(item.rating, item.ratingScale);
+  const imageUrl = safeExternalUrl(item.photoUrl);
+  const website = safeExternalUrl(item.website);
+  const mapLink = mapsUrl(item);
 
-                    {rec.aiRecommendationReason && (
-                      <p className="text-[11px] text-[#77717F] mt-2 leading-relaxed">
-                        {rec.aiRecommendationReason}
-                      </p>
-                    )}
-                  </div>
+  const insights: AccommodationReviewInsights | undefined =
+    item.reviewInsights ??
+    generateDeterministicReviewInsights(item);
 
-                  <div className="flex flex-wrap gap-2 mt-4">
-                    {website && (
-                      <a
-                        href={website}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1.5 rounded-lg bg-[#4B294F] text-white px-3 py-2 text-xs font-bold hover:bg-[#3B1F3E]"
-                      >
-                        <Globe className="w-3.5 h-3.5" />
-                        Website
-                        <ExternalLink className="w-3 h-3" />
-                      </a>
-                    )}
+  const openMaps = () => {
+    window.open(mapLink, "_blank", "noopener,noreferrer");
+  };
 
-                    <button
-                      type="button"
-                      onClick={() => openReviewInsights(rec)}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-[#D8C3A5] bg-white text-[#C2185B] px-3 py-2 text-xs font-bold"
-                    >
-                      <Sparkles className="w-3.5 h-3.5" />
-                      Insights
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
+  return (
+    <article className="overflow-hidden rounded-2xl border border-[#E7DCEC] bg-white shadow-sm transition-shadow hover:shadow-lg">
+      {imageUrl ? (
+        <img
+          src={imageUrl}
+          alt={`Property photo supplied for ${item.name}`}
+          loading="lazy"
+          referrerPolicy="no-referrer"
+          className="h-52 w-full bg-[#F3EDF7] object-cover"
+          onError={(event) => {
+            event.currentTarget.style.display = "none";
+          }}
+        />
+      ) : (
+        <div className="flex h-36 items-center justify-center bg-gradient-to-br from-[#F3EDF7] to-[#FAF7F0] px-5 text-center">
+          <div>
+            <span className="text-3xl" aria-hidden="true">⌂</span>
+            <p className="mt-2 text-sm text-[#4B294F]">
+              No property photo supplied
+            </p>
           </div>
         </div>
       )}
 
-      {/* Filters */}
-      <div className="flex flex-wrap items-center justify-between gap-4 py-3 border-b border-[#D8C3A5]/70">
-        <div className="flex flex-wrap items-center gap-2">
-          <Filter className="w-4 h-4 text-[#9B72CF]" />
+      <div className="p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-semibold uppercase tracking-wide text-[#9B72CF]">
+              {item.category || "Accommodation"}
+            </p>
 
-          <span className="text-xs font-semibold text-[#4B294F] uppercase">
-            Type:
-          </span>
+            <h3 className="mt-1 break-words text-xl font-bold text-[#4B294F]">
+              {item.name}
+            </h3>
 
-          <div className="flex flex-wrap gap-1 p-1 bg-[#EEE8F7] rounded-xl border border-[#D8C3A5]/50">
-            {[
-              { value: 'all', label: `All (${accommodations.length})` },
-              { value: 'hostel', label: 'Hostels & Budget' },
-              { value: 'guest_house', label: 'Guesthouses' },
-              { value: 'hotel', label: 'Hotels & Resorts' }
-            ].map(option => (
-              <button
-                key={option.value}
-                type="button"
-                onClick={() => setSelectedCategory(option.value)}
-                className={`px-3 py-1 text-xs rounded-lg font-medium ${
-                  selectedCategory === option.value
-                    ? 'bg-[#4B294F] text-[#FAF7F0]'
-                    : 'text-[#77717F] hover:text-[#4B294F]'
-                }`}
-              >
-                {option.label}
-              </button>
-            ))}
+            {(item.address || item.city || item.state) && (
+              <p className="mt-1 text-sm text-gray-600">
+                {[item.address, item.city, item.state]
+                  .filter(Boolean)
+                  .filter((value, index, all) => all.indexOf(value) === index)
+                  .join(", ")}
+              </p>
+            )}
           </div>
+
+          {rating !== undefined && (
+            <div className="shrink-0 rounded-xl bg-[#FAF7F0] px-3 py-2 text-right">
+              <p className="font-bold text-[#4B294F]">
+                ★ {rating.toFixed(1)}/5
+              </p>
+              {typeof item.reviewCount === "number" &&
+                item.reviewCount >= 0 && (
+                  <p className="text-xs text-gray-500">
+                    {item.reviewCount.toLocaleString("en-IN")} reviews
+                  </p>
+                )}
+            </div>
+          )}
         </div>
 
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2 text-xs text-[#77717F]">
-            <span>Radius:</span>
-            <select
-              value={maxDistance}
-              onChange={e => setMaxDistance(Number(e.target.value))}
-              className="border border-[#D8C3A5] rounded-xl px-2.5 py-1 text-xs bg-[#FAF7F0] text-[#4B294F]"
-            >
-              <option value={5}>Within 5 km</option>
-              <option value={10}>Within 10 km</option>
-              <option value={20}>Within 20 km</option>
-              <option value={50}>Any distance</option>
-            </select>
-          </div>
+        {item.priceDisclaimer && (
+          <p className="mt-3 rounded-lg bg-[#FAF7F0] p-3 text-xs leading-5 text-gray-600">
+            {item.priceDisclaimer}
+          </p>
+        )}
 
-          {comparedHotelIds.length > 0 && (
+        {(typeof item.nightlyRate === "number" ||
+          typeof item.totalStayRate === "number") && (
+          <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {typeof item.nightlyRate === "number" &&
+              Number.isFinite(item.nightlyRate) &&
+              item.nightlyRate >= 0 && (
+                <div className="rounded-xl border border-[#E7DCEC] p-3">
+                  <p className="text-xs text-gray-500">Nightly rate supplied</p>
+                  <p className="mt-1 font-bold text-[#4B294F]">
+                    {currencyFormatter(item.nightlyRate, item.currency)}
+                  </p>
+                </div>
+              )}
+
+            {typeof item.totalStayRate === "number" &&
+              Number.isFinite(item.totalStayRate) &&
+              item.totalStayRate >= 0 && (
+                <div className="rounded-xl border border-[#E7DCEC] p-3">
+                  <p className="text-xs text-gray-500">Stay total supplied</p>
+                  <p className="mt-1 font-bold text-[#4B294F]">
+                    {currencyFormatter(item.totalStayRate, item.currency)}
+                  </p>
+                </div>
+              )}
+          </div>
+        )}
+
+        <div className="mt-4 flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={openMaps}
+            className="rounded-xl bg-[#4B294F] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#613965]"
+          >
+            View on Google Maps
+          </button>
+
+          {website && (
+            <a
+              href={website}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="rounded-xl border border-[#DCCBE8] px-4 py-2.5 text-sm font-semibold text-[#4B294F] hover:bg-[#FAF7F0]"
+            >
+              Official website
+            </a>
+          )}
+
+          {onSelect && (
             <button
               type="button"
-              onClick={() => setShowComparisonModal(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#4B294F] text-white text-xs font-bold"
+              onClick={() => onSelect(item)}
+              className="rounded-xl border border-[#DCCBE8] px-4 py-2.5 text-sm font-semibold text-[#4B294F] hover:bg-[#FAF7F0]"
             >
-              <Scale className="w-3.5 h-3.5" />
-              Compare ({comparedHotelIds.length})
+              Select accommodation
             </button>
           )}
         </div>
-      </div>
 
-      {/* Accommodation Cards */}
-      {accommodations.length === 0 ? (
-        <div className="text-center py-12 px-4 max-w-lg mx-auto space-y-4">
-          <Bed className="w-12 h-12 mx-auto text-[#9B72CF]" />
-
-          <h3 className="text-base font-bold text-[#4B294F]">
-            No accommodation listings found in {destinationName}
-          </h3>
-
-          <p className="text-xs text-[#77717F]">
-            Search an external lodging directory to explore current options.
-          </p>
-
-          <a
-            href={googleHotelsSearchUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#4B294F] text-white text-xs font-bold"
-          >
-            <Search className="w-3.5 h-3.5" />
-            Search Google Travel
-            <ExternalLink className="w-3 h-3" />
-          </a>
+        <div className="mt-5 flex flex-wrap gap-2 border-b border-[#E7DCEC] pb-3">
+          {(
+            [
+              ["overview", "Overview"],
+              ["reviews", `Reviews (${reviews.length})`],
+              ["location", "Location"],
+            ] as [Tab, string][]
+          ).map(([tab, label]) => (
+            <button
+              key={tab}
+              type="button"
+              onClick={() => setActiveTab(tab)}
+              className={`rounded-lg px-3 py-2 text-sm font-medium ${
+                activeTab === tab
+                  ? "bg-[#4B294F] text-white"
+                  : "text-[#4B294F] hover:bg-[#F3EDF7]"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
         </div>
-      ) : filtered.length === 0 ? (
-        <div className="text-center py-12 text-[#77717F]">
-          <Bed className="w-10 h-10 mx-auto text-[#9B72CF] mb-2" />
-          <p className="font-bold text-[#4B294F]">
-            No accommodations match these filters.
-          </p>
-          <p className="text-xs mt-1">
-            Expand the distance or select All categories.
-          </p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filtered.map((item, idx) => {
-            const website = getSafeWebsiteUrl(item.website);
-            const isCompared = comparedHotelIds.includes(item.id);
-            const cardTab = getCardTab(item.id);
 
-            return (
-              <div
-                key={item.id || idx}
-                className={`rounded-2xl border transition-all flex flex-col justify-between overflow-hidden ${
-                  isCompared
-                    ? 'border-[#78C9D0] ring-2 ring-[#78C9D0]/30 bg-[#FAF7F0]'
-                    : 'border-[#D8C3A5] bg-[#FAF7F0] hover:shadow-lg hover:border-[#4B294F]'
-                }`}
-              >
-                <div>
-                  <div className="p-4 sm:p-5 pb-3 border-b border-[#D8C3A5]/60 bg-white">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="text-[10px] uppercase px-2 py-0.5 rounded-lg bg-[#EEE8F7] text-[#4B294F] border border-[#D8C3A5]/50">
-                          <Bed className="w-3 h-3 inline mr-1" />
-                          {item.category}
-                        </span>
+        {activeTab === "overview" && (
+          <div className="mt-4 space-y-4">
+            {item.source && (
+              <p className="text-xs text-gray-500">
+                Listing source: {item.source}
+              </p>
+            )}
 
-                        {item.distanceKm !== undefined && (
-                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#FAF7F0] text-[#4B294F] border border-[#D8C3A5]">
-                            ~{item.distanceKm} km
-                          </span>
-                        )}
-                      </div>
+            {typeof item.distanceKm === "number" &&
+              Number.isFinite(item.distanceKm) &&
+              item.distanceKm >= 0 && (
+                <p className="text-sm text-gray-700">
+                  Distance supplied by provider: {item.distanceKm.toFixed(1)} km
+                </p>
+              )}
 
-                      <button
-                        type="button"
-                        onClick={() => toggleCompare(item.id)}
-                        className={`text-[10px] font-bold px-2 py-1 rounded-lg border ${
-                          isCompared
-                            ? 'bg-[#78C9D0] text-[#24212B]'
-                            : 'bg-white text-[#77717F] border-[#D8C3A5]'
-                        }`}
-                      >
-                        <Scale className="w-3 h-3 inline mr-1" />
-                        {isCompared ? 'Comparing' : 'Compare'}
-                      </button>
-                    </div>
-
-                    <h3 className="font-heading font-bold text-[#4B294F] text-base mt-2.5">
-                      {item.name}
-                    </h3>
-
-                    {item.rating != null && (
-                      <div className="flex items-center gap-1.5 mt-2 pt-2 border-t border-[#D8C3A5]/40 text-xs">
-                        <Star className="w-4 h-4 text-amber-500 fill-amber-400" />
-                        <span className="font-bold text-[#24212B]">
-                          {item.rating}
-                        </span>
-                        <span className="text-[#77717F]">
-                          / {item.ratingScale || '5.0'}
-                        </span>
-                        {item.reviewCount != null && (
-                          <span className="text-[10px] text-[#77717F]">
-                            ({item.reviewCount} reviews)
-                          </span>
-                        )}
-
-                        <button
-                          type="button"
-                          onClick={() => openReviewInsights(item)}
-                          className="ml-auto text-[11px] text-[#C2185B] font-bold"
-                        >
-                          <Sparkles className="w-3 h-3 inline mr-1" />
-                          Insights
-                        </button>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Tabs */}
-                  <div className="grid grid-cols-3 border-b border-[#D8C3A5]/60 bg-[#EEE8F7]/60 text-[11px] font-semibold text-center">
-                    {([
-                      ['experience', 'Reviews'],
-                      ['location', 'Location'],
-                      ['safety', 'Safety']
-                    ] as const).map(([tab, label]) => (
-                      <button
-                        key={tab}
-                        type="button"
-                        onClick={() => setCardTab(item.id, tab)}
-                        className={`py-2 ${
-                          cardTab === tab
-                            ? 'bg-[#FAF7F0] text-[#4B294F] border-b-2 border-[#4B294F]'
-                            : 'text-[#77717F]'
-                        }`}
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-
-                  <div className="p-4 text-xs space-y-3 min-h-[160px]">
-                    {cardTab === 'experience' && (
-                      <div className="space-y-2.5">
-                        {item.categoryScores && (
-                          <div className="space-y-1.5 text-[11px]">
-                            <div className="flex justify-between text-[#77717F]">
-                              <span>Cleanliness</span>
-                              <span className="font-bold text-[#4B294F]">
-                                {item.categoryScores.cleanliness}/
-                                {item.categoryScores.scale}
-                              </span>
-                            </div>
-                            <div className="flex justify-between text-[#77717F]">
-                              <span>Comfort</span>
-                              <span className="font-bold text-[#4B294F]">
-                                {item.categoryScores.comfort}/
-                                {item.categoryScores.scale}
-                              </span>
-                            </div>
-                            <div className="flex justify-between text-[#77717F]">
-                              <span>Value for Money</span>
-                              <span className="font-bold text-[#4B294F]">
-                                {item.categoryScores.valueForMoney}/
-                                {item.categoryScores.scale}
-                              </span>
-                            </div>
-                          </div>
-                        )}
-
-                        {item.guestReviews?.[0] && (
-                          <div className="p-2.5 rounded-xl bg-white border border-[#D8C3A5]/60 text-[11px] space-y-1">
-                            <div className="flex justify-between gap-2 text-[10px] text-[#77717F]">
-                              <span className="font-bold text-[#4B294F]">
-                                {item.guestReviews[0].author}
-                              </span>
-                              <span>{item.guestReviews[0].source}</span>
-                            </div>
-                            <p className="italic text-[#24212B]">
-                              “{item.guestReviews[0].text}”
-                            </p>
-                          </div>
-                        )}
-
-                        {!item.categoryScores && !item.guestReviews?.length && (
-                          <p className="text-[#77717F]">
-                            Review details are not available from the current
-                            listing source.
-                          </p>
-                        )}
-                      </div>
-                    )}
-
-                    {cardTab === 'location' && (
-                      <div className="space-y-2 text-xs text-[#77717F]">
-                        <div className="flex items-start gap-1.5">
-                          <MapPin className="w-3.5 h-3.5 text-[#78C9D0] shrink-0 mt-0.5" />
-                          <span className="text-[#24212B]">
-                            {item.address || destinationName}
-                          </span>
-                        </div>
-
-                        {item.neighborhoodSafetyNote && (
-                          <div className="p-2 rounded-xl bg-white border border-[#D8C3A5]/60 text-[11px]">
-                            {item.neighborhoodSafetyNote}
-                          </div>
-                        )}
-
-                        <div className="text-[11px] text-[#4B294F] flex items-center gap-1">
-                          <Compass className="w-3 h-3 text-[#9B72CF]" />
-                          Distance to center: ~{item.distanceKm ?? 'Unknown'} km
-                        </div>
-                      </div>
-                    )}
-
-                    {cardTab === 'safety' && (
-                      <div className="space-y-2 text-xs">
-                        {item.safetyFeatures?.length ? (
-                          item.safetyFeatures.slice(0, 4).map((feature, i) => (
-                            <div
-                              key={i}
-                              className="flex items-start gap-1.5 text-[11px] text-[#24212B]"
-                            >
-                              <ShieldCheck className="w-3 h-3 text-emerald-600 shrink-0 mt-0.5" />
-                              <span>{feature}</span>
-                            </div>
-                          ))
-                        ) : (
-                          <p className="text-[#77717F]">
-                            Safety features have not been provided by the
-                            current listing source. Contact the property to
-                            confirm its facilities.
-                          </p>
-                        )}
-
-                        {item.nearestHospitalKm != null && (
-                          <div className="p-2 rounded-xl bg-white border border-[#D8C3A5]/60 text-[11px]">
-                            <div className="font-semibold text-[#4B294F]">
-                              <HeartPulse className="w-3 h-3 inline mr-1 text-[#C2185B]" />
-                              Nearest medical center
-                            </div>
-                            <span>
-                              Approx. {item.nearestHospitalKm} km, if verified
-                              by the data source.
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Card Footer */}
-                <div className="p-4 pt-0 space-y-2">
-                  <div className="p-2 rounded-xl bg-white border border-[#D8C3A5]/60 text-[11px] flex items-start justify-between gap-2 text-[#77717F]">
-                    <span>Nightly tariff:</span>
-                    <span className="font-semibold text-[#4B294F] text-right">
-                      {item.priceDisclaimer ||
-                        (item.nightlyRate != null
-                          ? `~₹${item.nightlyRate.toLocaleString('en-IN')} (estimate)`
-                          : 'Price unavailable — contact property')}
-                    </span>
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-2">
-                    <a
-                      href={getGoogleMapsSearchUrl({
-                        name: item.name,
-                        address: item.address,
-                        lat: item.lat,
-                        lon: item.lon,
-                        state: destinationName
-                      })}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex-1 text-xs font-medium py-2 px-3 rounded-xl border border-[#D8C3A5] hover:border-[#4B294F] bg-white hover:bg-[#EEE8F7] text-[#24212B] flex items-center justify-center gap-1.5"
+            {item.amenities && item.amenities.length > 0 && (
+              <section>
+                <h4 className="font-semibold text-[#4B294F]">
+                  Amenities supplied
+                </h4>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {item.amenities.map((amenity, index) => (
+                    <span
+                      key={`${amenity}-${index}`}
+                      className="rounded-full bg-[#F3EDF7] px-3 py-1.5 text-xs text-[#4B294F]"
                     >
-                      <MapPin className="w-3.5 h-3.5 text-[#78C9D0]" />
-                      Google Maps
-                      <ExternalLink className="w-3 h-3" />
-                    </a>
-
-                    {website && (
-                      <a
-                        href={website}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        aria-label={`Open the listed website for ${item.name}`}
-                        className="flex-1 text-xs font-bold py-2 px-3 rounded-xl border border-[#9B72CF] bg-[#EEE8F7] hover:bg-[#E1D5F3] text-[#4B294F] flex items-center justify-center gap-1.5"
-                      >
-                        <Globe className="w-3.5 h-3.5 text-[#9B72CF]" />
-                        Website
-                        <ExternalLink className="w-3 h-3" />
-                      </a>
-                    )}
-
-                    {onFocusMap && (
-                      <button
-                        type="button"
-                        onClick={() => onFocusMap(item)}
-                        className="text-xs font-bold py-2 px-3 rounded-xl border border-[#D8C3A5] bg-white hover:bg-[#EEE8F7] text-[#4B294F] flex items-center justify-center gap-1"
-                        title="Focus on in-app map"
-                      >
-                        <Compass className="w-3.5 h-3.5 text-[#9B72CF]" />
-                        Map
-                      </button>
-                    )}
-                  </div>
-
-                  {!website && (
-                    <p className="text-[10px] text-[#77717F]">
-                      No website supplied for this listing. Use Google Maps to
-                      check the property details or search for its official site.
-                    </p>
-                  )}
+                      {amenity}
+                    </span>
+                  ))}
                 </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
+              </section>
+            )}
 
-      {/* AI Review Insights Modal */}
-      {selectedForInsights && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
-          <div className="bg-white rounded-3xl border border-[#D8C3A5] max-w-xl w-full p-6 sm:p-8 max-h-[90vh] overflow-y-auto shadow-2xl space-y-6">
-            <div className="flex items-start justify-between gap-4 pb-4 border-b border-[#D8C3A5]">
-              <div>
-                <div className="text-[10px] font-bold uppercase tracking-wider text-[#C2185B] flex items-center gap-1 mb-1">
-                  <Sparkles className="w-3.5 h-3.5" />
-                  AI Guest Review Insights
-                </div>
+            {item.phone && (
+              <p className="text-sm text-gray-700">
+                Phone supplied: {item.phone}
+              </p>
+            )}
 
-                <h3 className="text-xl font-heading font-bold text-[#4B294F]">
-                  {selectedForInsights.name}
-                </h3>
+            {item.neighborhoodSafetyNote && (
+              <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                Safety information supplied: {item.neighborhoodSafetyNote}
+              </p>
+            )}
 
-                <div className="text-xs text-[#77717F] mt-1">
-                  {selectedForInsights.rating != null
-                    ? `Rating: ${selectedForInsights.rating} / ${selectedForInsights.ratingScale || '5.0'}`
-                    : 'Rating unavailable'}
-                  {' • '}
-                  {selectedForInsights.category}
-                </div>
-              </div>
+            <p className="text-xs leading-5 text-gray-500">
+              Listing information and supplied prices may change. Confirm
+              details, availability, cancellation conditions, and final charges
+              with the property or booking provider.
+            </p>
+          </div>
+        )}
 
-              <button
-                type="button"
-                onClick={() => setSelectedForInsights(null)}
-                className="p-1.5 rounded-full hover:bg-[#EEE8F7] text-[#77717F]"
-                aria-label="Close insights"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {loadingInsights ? (
-              <div className="py-12 text-center space-y-3">
-                <Loader2 className="w-8 h-8 animate-spin mx-auto text-[#78C9D0]" />
-                <p className="text-xs text-[#77717F]">
-                  Loading accommodation insights...
+        {activeTab === "reviews" && (
+          <div className="mt-4 space-y-4">
+            {reviews.length > 0 ? (
+              <>
+                <p className="text-xs leading-5 text-gray-500">
+                  Reviews below are displayed from the supplied source data.
+                  Their authenticity and current status have not been
+                  independently verified by this component.
                 </p>
-              </div>
-            ) : currentInsights ? (
-              <div className="space-y-4 text-xs">
-                <div className="flex items-center justify-between p-3 rounded-2xl bg-[#FAF7F0] border border-[#D8C3A5]">
-                  <span className="font-semibold text-[#4B294F]">
-                    Overall sentiment
-                  </span>
-                  <span className="px-3 py-1 rounded-full text-xs font-bold uppercase bg-emerald-100 text-emerald-800">
-                    {currentInsights.overallSentiment}
-                  </span>
-                </div>
 
-                <div className="p-4 rounded-2xl bg-white border border-emerald-200 space-y-2">
-                  <div className="font-bold text-emerald-900 flex items-center gap-1.5">
-                    <ThumbsUp className="w-4 h-4 text-emerald-600" />
-                    Positive points
-                  </div>
-                  <ul className="space-y-1.5 text-[#24212B]">
-                    {currentInsights.recurringPros.map((pro, i) => (
-                      <li key={i} className="flex items-start gap-2">
-                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
-                        {pro}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-
-                <div className="p-4 rounded-2xl bg-white border border-amber-200 space-y-2">
-                  <div className="font-bold text-amber-900 flex items-center gap-1.5">
-                    <AlertCircle className="w-4 h-4 text-amber-600" />
-                    Limitations to consider
-                  </div>
-                  <ul className="space-y-1.5 text-[#24212B]">
-                    {currentInsights.recurringCons.map((con, i) => (
-                      <li key={i} className="flex items-start gap-2">
-                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0 mt-1.5" />
-                        {con}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-
-                {[
-                  ['Cleanliness', currentInsights.cleanlinessSummary],
-                  ['Location', currentInsights.locationConvenience],
-                  ['Staff', currentInsights.staffAssessment],
-                  ['Value', currentInsights.valueForMoneyAssessment]
-                ].map(([title, content]) => (
-                  <div
-                    key={title}
-                    className="p-3 rounded-xl bg-[#FAF7F0] border border-[#D8C3A5]/60"
-                  >
-                    <span className="font-bold text-[#4B294F]">{title}</span>
-                    <p className="text-[#77717F] mt-1">{content}</p>
-                  </div>
+                {reviews.map((review, index) => (
+                  <ReviewCard
+                    key={`${review.source}-${review.date ?? ""}-${index}`}
+                    review={review}
+                  />
                 ))}
-
-                <div className="p-4 rounded-2xl bg-[#EEE8F7]/60 border border-[#D8C3A5] space-y-2">
-                  <div className="font-bold text-[#4B294F] flex items-center gap-1.5">
-                    <ShieldCheck className="w-4 h-4 text-[#78C9D0]" />
-                    Before booking
-                  </div>
-                  <ul className="space-y-1 text-[#24212B]">
-                    {currentInsights.checkBeforeBooking.map((check, i) => (
-                      <li key={i}>• {check}</li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
-            ) : null}
-
-            <div className="pt-2 border-t border-[#D8C3A5] flex justify-end">
-              <button
-                type="button"
-                onClick={() => setSelectedForInsights(null)}
-                className="px-5 py-2 rounded-xl bg-[#4B294F] text-white text-xs font-bold"
-              >
-                Close Insights
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Accommodation Comparison Modal */}
-      {showComparisonModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
-          <div className="bg-white rounded-3xl border border-[#D8C3A5] max-w-4xl w-full p-6 sm:p-8 max-h-[90vh] overflow-y-auto shadow-2xl space-y-6">
-            <div className="flex items-center justify-between pb-4 border-b border-[#D8C3A5]">
-              <div>
-                <h3 className="text-xl font-heading font-bold text-[#4B294F] flex items-center gap-2">
-                  <Scale className="w-5 h-5 text-[#78C9D0]" />
-                  Accommodation Comparison
-                </h3>
-                <p className="text-xs text-[#77717F]">
-                  Comparing {comparedHotels.length} accommodation options.
+              </>
+            ) : (
+              <div className="rounded-xl bg-[#FAF7F0] p-4">
+                <p className="font-semibold text-[#4B294F]">
+                  No review text supplied
+                </p>
+                <p className="mt-1 text-sm text-gray-600">
+                  This listing does not currently contain review text from a
+                  source. Open the provider's listing to check its reviews.
                 </p>
               </div>
+            )}
 
-              <button
-                type="button"
-                onClick={() => setShowComparisonModal(false)}
-                className="p-1.5 rounded-full hover:bg-[#EEE8F7] text-[#77717F]"
-                aria-label="Close comparison"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={() => setShowInsights((current) => !current)}
+              disabled={!insights}
+              className="rounded-xl bg-[#9B72CF] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#855BB9] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {showInsights ? "Hide review insights" : "Review text insights"}
+            </button>
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs text-left border-collapse">
-                <thead>
-                  <tr className="border-b border-[#D8C3A5] bg-[#FAF7F0]">
-                    <th className="p-3 font-bold text-[#4B294F]">
-                      Comparison Criteria
-                    </th>
-                    {comparedHotels.map(h => (
-                      <th key={h.id} className="p-3 font-bold text-[#4B294F]">
-                        {h.name}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
+            {showInsights && insights && (
+              <section className="space-y-4 rounded-xl border border-[#E7DCEC] bg-[#FAF7F0] p-4">
+                <div>
+                  <h4 className="font-bold text-[#4B294F]">
+                    {insights.hotelName}: review summary
+                  </h4>
+                  <p className="mt-1 text-sm text-gray-600">
+                    {insights.isAIGenerated
+                      ? "AI-generated analysis. Check the original reviews before booking."
+                      : "Rule-based summary of supplied review text. This is not AI-generated and does not independently verify guest experiences."}
+                  </p>
+                </div>
 
-                <tbody className="divide-y divide-[#D8C3A5]/50">
-                  <tr>
-                    <td className="p-3 font-semibold text-[#77717F]">Category</td>
-                    {comparedHotels.map(h => (
-                      <td key={h.id} className="p-3">{h.category}</td>
-                    ))}
-                  </tr>
+                <p className="text-sm text-gray-700">
+                  Sentiment classification:{" "}
+                  <span className="font-semibold">
+                    {insights.overallSentiment.replaceAll("_", " ")}
+                  </span>
+                </p>
 
-                  <tr>
-                    <td className="p-3 font-semibold text-[#77717F]">Rating</td>
-                    {comparedHotels.map(h => (
-                      <td key={h.id} className="p-3">
-                        {h.rating != null
-                          ? `${h.rating} / ${h.ratingScale || '5.0'}`
-                          : 'Unavailable'}
-                        {h.reviewCount != null && ` (${h.reviewCount} reviews)`}
-                      </td>
-                    ))}
-                  </tr>
+                <InsightSection
+                  title="Positive keyword observations"
+                  items={insights.recurringPros}
+                />
+                <InsightSection
+                  title="Negative keyword observations"
+                  items={insights.recurringCons}
+                />
 
-                  <tr>
-                    <td className="p-3 font-semibold text-[#77717F]">
-                      Distance to center
-                    </td>
-                    {comparedHotels.map(h => (
-                      <td key={h.id} className="p-3">
-                        {h.distanceKm != null ? `~${h.distanceKm} km` : 'Unavailable'}
-                      </td>
-                    ))}
-                  </tr>
+                <div>
+                  <h5 className="font-semibold text-[#4B294F]">
+                    Cleanliness
+                  </h5>
+                  <p className="mt-1 text-sm text-gray-700">
+                    {insights.cleanlinessSummary}
+                  </p>
+                </div>
 
-                  <tr>
-                    <td className="p-3 font-semibold text-[#77717F]">
-                      Nightly tariff
-                    </td>
-                    {comparedHotels.map(h => (
-                      <td key={h.id} className="p-3 text-[#4B294F] font-bold">
-                        {h.priceDisclaimer ||
-                          (h.nightlyRate != null
-                            ? `~₹${h.nightlyRate.toLocaleString('en-IN')} (estimate)`
-                            : 'Unavailable')}
-                      </td>
-                    ))}
-                  </tr>
+                <div>
+                  <h5 className="font-semibold text-[#4B294F]">
+                    Location convenience
+                  </h5>
+                  <p className="mt-1 text-sm text-gray-700">
+                    {insights.locationConvenience}
+                  </p>
+                </div>
 
-                  <tr>
-                    <td className="p-3 font-semibold text-[#77717F]">
-                      Directions & Website
-                    </td>
-                    {comparedHotels.map(h => {
-                      const website = getSafeWebsiteUrl(h.website);
+                <div>
+                  <h5 className="font-semibold text-[#4B294F]">Staff</h5>
+                  <p className="mt-1 text-sm text-gray-700">
+                    {insights.staffAssessment}
+                  </p>
+                </div>
 
-                      return (
-                        <td key={h.id} className="p-3">
-                          <div className="flex flex-col items-start gap-2">
-                            <a
-                              href={getGoogleMapsSearchUrl({
-                                name: h.name,
-                                address: h.address,
-                                lat: h.lat,
-                                lon: h.lon,
-                                state: destinationName
-                              })}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="inline-flex items-center gap-1 text-[#C2185B] font-bold hover:underline"
-                            >
-                              <MapPin className="w-3 h-3" />
-                              Google Maps
-                              <ExternalLink className="w-3 h-3" />
-                            </a>
+                <div>
+                  <h5 className="font-semibold text-[#4B294F]">
+                    Value for money
+                  </h5>
+                  <p className="mt-1 text-sm text-gray-700">
+                    {insights.valueForMoneyAssessment}
+                  </p>
+                </div>
 
-                            {website ? (
-                              <a
-                                href={website}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="inline-flex items-center gap-1 text-[#4B294F] font-bold hover:underline"
-                              >
-                                <Globe className="w-3 h-3" />
-                                Website
-                                <ExternalLink className="w-3 h-3" />
-                              </a>
-                            ) : (
-                              <span className="text-[#77717F]">
-                                Website unavailable
-                              </span>
-                            )}
-                          </div>
-                        </td>
-                      );
-                    })}
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-
-            <div className="pt-2 border-t border-[#D8C3A5] flex justify-end">
-              <button
-                type="button"
-                onClick={() => setShowComparisonModal(false)}
-                className="px-5 py-2 rounded-xl bg-[#4B294F] text-white text-xs font-bold"
-              >
-                Done Comparing
-              </button>
-            </div>
+                <InsightSection
+                  title="Check before booking"
+                  items={insights.checkBeforeBooking}
+                />
+              </section>
+            )}
           </div>
-        </div>
-      )}
-    </div>
+        )}
+
+        {activeTab === "location" && (
+          <div className="mt-4 space-y-3">
+            <p className="text-sm text-gray-700">
+              Coordinates supplied: {item.lat.toFixed(5)},{" "}
+              {item.lon.toFixed(5)}
+            </p>
+
+            <a
+              href={mapLink}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex rounded-xl bg-[#4B294F] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#613965]"
+            >
+              Open location in Google Maps
+            </a>
+
+            <p className="text-xs leading-5 text-gray-500">
+              Confirm the pin and property address on the map before travelling.
+            </p>
+          </div>
+        )}
+      </div>
+    </article>
   );
 };
+
+const AccommodationFinder: React.FC<AccommodationFinderProps> = ({
+  accommodations = [],
+  destination,
+  onSelectAccommodation,
+}) => {
+  const [sortBy, setSortBy] = useState<"recommended" | "rating" | "price">(
+    "recommended"
+  );
+  const [searchText, setSearchText] = useState("");
+
+  const validListings = useMemo(
+    () => getValidAccommodations(accommodations),
+    [accommodations]
+  );
+
+  const filteredListings = useMemo(() => {
+    const query = searchText.trim().toLowerCase();
+
+    let result = validListings.filter((item) => {
+      const searchable = [
+        item.name,
+        item.category,
+        item.address,
+        item.city,
+        item.state,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+
+      return !query || searchable.includes(query);
+    });
+
+    if (sortBy === "rating") {
+      result = sortAccommodationsByRating(result);
+    }
+
+    if (sortBy === "price") {
+      result = [...result].sort((a, b) => {
+        const priceA =
+          typeof a.nightlyRate === "number" && a.nightlyRate >= 0
+            ? a.nightlyRate
+            : Number.POSITIVE_INFINITY;
+
+        const priceB =
+          typeof b.nightlyRate === "number" && b.nightlyRate >= 0
+            ? b.nightlyRate
+            : Number.POSITIVE_INFINITY;
+
+        return priceA - priceB;
+      });
+    }
+
+    return result;
+  }, [validListings, searchText, sortBy]);
+
+  return (
+    <section className="space-y-6">
+      <div className="rounded-2xl bg-gradient-to-r from-[#4B294F] to-[#6D4776] p-6 text-white">
+        <p className="text-sm font-semibold uppercase tracking-widest text-[#E5D4F1]">
+          Stay smarter
+        </p>
+        <h2 className="mt-2 text-2xl font-bold">
+          Accommodation Finder
+        </h2>
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-white/85">
+          Explore accommodation listings, available source information,
+          supplied guest reviews, and map locations.
+          {destination ? ` Destination: ${destination}.` : ""}
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_220px]">
+        <label className="block">
+          <span className="mb-1 block text-sm font-semibold text-[#4B294F]">
+            Search accommodation
+          </span>
+          <input
+            type="search"
+            value={searchText}
+            onChange={(event) => setSearchText(event.target.value)}
+            placeholder="Search by name, area, or category"
+            className="w-full rounded-xl border border-[#DCCBE8] bg-white px-4 py-3 text-sm outline-none focus:border-[#9B72CF] focus:ring-2 focus:ring-[#9B72CF]/20"
+          />
+        </label>
+
+        <label className="block">
+          <span className="mb-1 block text-sm font-semibold text-[#4B294F]">
+            Sort listings
+          </span>
+          <select
+            value={sortBy}
+            onChange={(event) =>
+              setSortBy(
+                event.target.value as "recommended" | "rating" | "price"
+              )
+            }
+            className="w-full rounded-xl border border-[#DCCBE8] bg-white px-4 py-3 text-sm outline-none focus:border-[#9B72CF] focus:ring-2 focus:ring-[#9B72CF]/20"
+          >
+            <option value="recommended">Provider order</option>
+            <option value="rating">Highest supplied rating</option>
+            <option value="price">Lowest supplied nightly rate</option>
+          </select>
+        </label>
+      </div>
+
+      <div className="flex flex-wrap gap-3 text-sm text-gray-600">
+        <span>
+          {filteredListings.length} listing
+          {filteredListings.length === 1 ? "" : "s"}
+        </span>
+        <span>•</span>
+        <span>Only supplied listing data is displayed</span>
+      </div>
+
+      {filteredListings.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-[#CDB8DD] bg-[#FAF7F0] px-6 py-10 text-center">
+          <div className="text-4xl" aria-hidden="true">⌂</div>
+          <h3 className="mt-3 text-lg font-bold text-[#4B294F]">
+            No accommodation listings available
+          </h3>
+          <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-gray-600">
+            {searchText
+              ? "No supplied listings match your search. Try another property name or location."
+              : "No valid accommodation records were supplied to this component. Connect a real accommodation data provider or pass its returned records to the component."}
+          </p>
+
+          {destination && (
+            <a
+              href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+                `accommodation in ${destination}`
+              )}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-5 inline-flex rounded-xl bg-[#4B294F] px-4 py-3 text-sm font-semibold text-white hover:bg-[#613965]"
+            >
+              Search accommodation on Google Maps
+            </a>
+          )}
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+          {filteredListings.map((item) => (
+            <AccommodationCard
+              key={item.id}
+              item={item}
+              onSelect={onSelectAccommodation}
+            />
+          ))}
+        </div>
+      )}
+
+      <p className="text-xs leading-5 text-gray-500">
+        SAFARNAMA AI does not guarantee property availability, current prices,
+        review authenticity, or safety. Confirm all important details with
+        the original provider before booking.
+      </p>
+    </section>
+  );
+};
+
+export default AccommodationFinder;
