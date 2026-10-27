@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { AccommodationItem } from '../types';
+import type { AccommodationItem } from '../types';
 import {
   MapPin,
   ExternalLink,
@@ -26,8 +26,21 @@ interface OSMElement {
   id: number;
   lat?: number;
   lon?: number;
-  center?: { lat: number; lon: number };
+  center?: {
+    lat: number;
+    lon: number;
+  };
   tags?: Record<string, string>;
+}
+
+interface OSMResponse {
+  elements?: OSMElement[];
+}
+
+interface GeocodingResult {
+  lat: string;
+  lon: string;
+  display_name?: string;
 }
 
 const NOMINATIM_URL =
@@ -38,21 +51,30 @@ const OVERPASS_URLS = [
   'https://overpass.kumi.systems/api/interpreter',
 ];
 
-function mapsUrl(name: string, lat: number, lon: number) {
+const REQUEST_TIMEOUT_MS = 8000;
+
+function makeMapsUrl(
+  name: string,
+  lat: number,
+  lon: number
+): string {
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
     `${name} ${lat},${lon}`
   )}`;
 }
 
-function hotelSearchUrl(name: string, destination: string) {
-  return `https://www.google.com/search?q=${encodeURIComponent(
-    `${name} hotel ${destination} official website`
+function makeMapsSearchUrl(destination: string): string {
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+    `hotels in ${destination}`
   )}`;
 }
 
-function bookingSearchUrl(destination: string, hotelName?: string) {
+function makeBookingSearchUrl(
+  destination: string,
+  hotelName?: string
+): string {
   const query = hotelName
-    ? `${hotelName} ${destination}`
+    ? `${hotelName}, ${destination}`
     : `hotels in ${destination}`;
 
   return `https://www.booking.com/searchresults.html?ss=${encodeURIComponent(
@@ -60,18 +82,83 @@ function bookingSearchUrl(destination: string, hotelName?: string) {
   )}`;
 }
 
-function reviewSearchUrl(name: string, destination: string) {
+function makeOfficialWebsiteSearchUrl(
+  hotelName: string,
+  destination: string
+): string {
   return `https://www.google.com/search?q=${encodeURIComponent(
-    `${name} ${destination} hotel reviews`
+    `${hotelName} ${destination} official website`
   )}`;
 }
 
-function toAccommodation(
+function makeReviewsSearchUrl(
+  hotelName: string,
+  destination: string
+): string {
+  return `https://www.google.com/search?q=${encodeURIComponent(
+    `${hotelName} ${destination} hotel reviews`
+  )}`;
+}
+
+function makeTimeoutError(): Error {
+  return new Error(
+    'The accommodation service took too long to respond. You can still search hotels using the links below.'
+  );
+}
+
+async function fetchWithTimeout(
+  url: string,
+  options: RequestInit = {},
+  timeoutMs = REQUEST_TIMEOUT_MS
+): Promise<Response> {
+  const controller = new AbortController();
+  const parentSignal = options.signal;
+
+  let timedOut = false;
+
+  const abortFromParent = () => controller.abort();
+
+  if (parentSignal?.aborted) {
+    controller.abort();
+  } else {
+    parentSignal?.addEventListener('abort', abortFromParent, {
+      once: true,
+    });
+  }
+
+  const timeoutId = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
+
+  try {
+    return await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (timedOut) {
+      throw makeTimeoutError();
+    }
+
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+    parentSignal?.removeEventListener(
+      'abort',
+      abortFromParent
+    );
+  }
+}
+
+function getAccommodation(
   element: OSMElement
 ): AccommodationItem | null {
-  const tags = element.tags || {};
+  const tags = element.tags ?? {};
+
   const lat = element.lat ?? element.center?.lat;
   const lon = element.lon ?? element.center?.lon;
+
   const name = tags.name || tags['name:en'];
 
   if (
@@ -88,13 +175,13 @@ function toAccommodation(
     return null;
   }
 
-  const rawType =
+  const rawCategory =
     tags.tourism ||
     tags.amenity ||
     tags.building ||
     'accommodation';
 
-  const category = rawType
+  const category = rawCategory
     .replaceAll('_', ' ')
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 
@@ -109,46 +196,70 @@ function toAccommodation(
     .filter(Boolean)
     .join(', ');
 
-  const id = `osm-${element.type}-${element.id}`;
-
-  const website =
-    tags.website ||
-    tags['contact:website'] ||
-    tags.url ||
-    undefined;
-
-  const photoUrl =
-    tags.image ||
-    undefined;
-
   const amenities = [
-    tags.internet_access === 'wlan' ? 'Wi-Fi listed' : '',
+    tags.internet_access === 'wlan'
+      ? 'Wi-Fi listed'
+      : '',
     tags.parking ? 'Parking listed' : '',
-    tags.air_conditioning ? 'Air conditioning listed' : '',
+    tags.air_conditioning
+      ? 'Air conditioning listed'
+      : '',
     tags.swimming_pool ? 'Swimming pool listed' : '',
     tags.restaurant ? 'Restaurant listed' : '',
   ].filter(Boolean);
 
   return {
-    id,
+    id: `osm-${element.type}-${element.id}`,
     name,
     category,
-    rawCategory: rawType,
+    rawCategory,
     lat,
     lon,
     address: address || undefined,
     phone: tags.phone || tags['contact:phone'] || null,
-    website,
-    photoUrl,
+    website:
+      tags.website ||
+      tags['contact:website'] ||
+      tags.url ||
+      undefined,
+    photoUrl: tags.image || undefined,
     source: 'OpenStreetMap',
     placeId: element.id,
-    googleMapsUrl: mapsUrl(name, lat, lon),
+    googleMapsUrl: makeMapsUrl(name, lat, lon),
     amenities,
     currency: 'INR',
   };
 }
 
-const AccommodationFinder: React.FC<AccommodationFinderProps> = ({
+function normaliseWebsite(
+  website?: string | null
+): string | undefined {
+  if (!website) return undefined;
+
+  const value = website.trim();
+
+  if (!value) return undefined;
+
+  try {
+    const url = new URL(
+      /^https?:\/\//i.test(value)
+        ? value
+        : `https://${value}`
+    );
+
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') {
+      return undefined;
+    }
+
+    return url.toString();
+  } catch {
+    return undefined;
+  }
+}
+
+const AccommodationFinder: React.FC<
+  AccommodationFinderProps
+> = ({
   accommodations,
   destinationName,
   onFocusMap,
@@ -160,45 +271,52 @@ const AccommodationFinder: React.FC<AccommodationFinderProps> = ({
   const [searched, setSearched] = useState(false);
   const [retryKey, setRetryKey] = useState(0);
 
+  const destination = destinationName.trim();
+
   useEffect(() => {
     let cancelled = false;
     const controller = new AbortController();
 
     async function searchAccommodations() {
-      const destination = destinationName.trim();
-
-      if (!destination) {
-        setLiveResults([]);
-        setError('Enter a destination to find nearby accommodation.');
-        setSearched(true);
-        setLoading(false);
-        return;
-      }
-
-      setLoading(true);
       setError('');
       setSearched(false);
 
-      try {
-        // Prefer real accommodation records already supplied by the app.
-        if (accommodations.length > 0) {
-          if (!cancelled) {
-            setLiveResults(accommodations);
-            setSearched(true);
-          }
-          return;
-        }
+      if (!destination) {
+        setLiveResults([]);
+        setLoading(false);
+        setSearched(true);
+        setError('Enter a destination to search for hotels.');
+        return;
+      }
 
-        // Find the actual destination coordinates.
+      // Show existing application data immediately.
+      if (accommodations.length > 0) {
+        setLiveResults(accommodations);
+        setLoading(false);
+        setSearched(true);
+        return;
+      }
+
+      setLiveResults([]);
+      setLoading(true);
+
+      try {
+        // Step 1: Resolve the destination coordinates.
         const geocodeUrl = new URL(NOMINATIM_URL);
         geocodeUrl.searchParams.set('q', destination);
         geocodeUrl.searchParams.set('format', 'jsonv2');
         geocodeUrl.searchParams.set('limit', '1');
 
-        const geoResponse = await fetch(geocodeUrl.toString(), {
-          signal: controller.signal,
-          headers: { Accept: 'application/json' },
-        });
+        const geoResponse = await fetchWithTimeout(
+          geocodeUrl.toString(),
+          {
+            headers: {
+              Accept: 'application/json',
+            },
+            signal: controller.signal,
+          },
+          REQUEST_TIMEOUT_MS
+        );
 
         if (!geoResponse.ok) {
           throw new Error(
@@ -206,15 +324,12 @@ const AccommodationFinder: React.FC<AccommodationFinderProps> = ({
           );
         }
 
-        const geoData: Array<{
-          lat: string;
-          lon: string;
-          display_name?: string;
-        }> = await geoResponse.json();
+        const geoData: GeocodingResult[] =
+          await geoResponse.json();
 
         if (!geoData.length) {
           throw new Error(
-            `Could not find "${destination}". Check the spelling or try a nearby city.`
+            `No location was found for "${destination}". Try a city or nearby region.`
           );
         }
 
@@ -230,13 +345,15 @@ const AccommodationFinder: React.FC<AccommodationFinderProps> = ({
           lon > 180
         ) {
           throw new Error(
-            'The location provider returned invalid coordinates.'
+            'The location service returned invalid coordinates.'
           );
         }
 
-        // Search actual mapped accommodation records near the destination.
+        if (controller.signal.aborted || cancelled) return;
+
+        // Step 2: Search mapped hotels and guest houses.
         const query = `
-          [out:json][timeout:25];
+          [out:json][timeout:15];
           (
             node(around:10000,${lat},${lon})["tourism"~"^(hotel|hostel|guest_house|motel|apartment|chalet|camp_site)$"]["name"];
             way(around:10000,${lat},${lon})["tourism"~"^(hotel|hostel|guest_house|motel|apartment|chalet|camp_site)$"]["name"];
@@ -248,37 +365,43 @@ const AccommodationFinder: React.FC<AccommodationFinderProps> = ({
         `;
 
         let elements: OSMElement[] = [];
-        let lastError: unknown;
+        let lastError: unknown = null;
 
         for (const endpoint of OVERPASS_URLS) {
+          if (controller.signal.aborted || cancelled) return;
+
           try {
-            const response = await fetch(endpoint, {
-              method: 'POST',
-              headers: {
-                'Content-Type':
-                  'application/x-www-form-urlencoded;charset=UTF-8',
-                Accept: 'application/json',
+            const response = await fetchWithTimeout(
+              endpoint,
+              {
+                method: 'POST',
+                headers: {
+                  'Content-Type':
+                    'application/x-www-form-urlencoded;charset=UTF-8',
+                  Accept: 'application/json',
+                },
+                body: new URLSearchParams({
+                  data: query,
+                }).toString(),
+                signal: controller.signal,
               },
-              body: new URLSearchParams({
-                data: query,
-              }).toString(),
-              signal: controller.signal,
-            });
+              REQUEST_TIMEOUT_MS
+            );
 
             if (!response.ok) {
               throw new Error(
-                `Accommodation search failed (HTTP ${response.status}).`
+                `Hotel search failed (HTTP ${response.status}).`
               );
             }
 
-            const data: { elements?: OSMElement[] } =
-              await response.json();
+            const data: OSMResponse = await response.json();
 
-            elements = data.elements || [];
-            lastError = undefined;
+            elements = data.elements ?? [];
+            lastError = null;
             break;
           } catch (caught) {
-            if (controller.signal.aborted) return;
+            if (controller.signal.aborted || cancelled) return;
+
             lastError = caught;
           }
         }
@@ -292,35 +415,43 @@ const AccommodationFinder: React.FC<AccommodationFinderProps> = ({
         const unique = new Map<string, AccommodationItem>();
 
         for (const element of elements) {
-          const item = toAccommodation(element);
+          const item = getAccommodation(element);
 
-          if (item) {
-            const key = `${item.name.toLowerCase()}-${item.lat.toFixed(
-              4
-            )}-${item.lon.toFixed(4)}`;
+          if (!item) continue;
 
-            unique.set(key, item);
-          }
+          const key = [
+            item.name.toLowerCase(),
+            item.lat.toFixed(4),
+            item.lon.toFixed(4),
+          ].join('-');
+
+          unique.set(key, item);
         }
 
-        const results = Array.from(unique.values()).sort((a, b) =>
-          a.name.localeCompare(b.name)
+        const results = Array.from(unique.values()).sort(
+          (a, b) => a.name.localeCompare(b.name)
         );
 
         if (!cancelled) {
           setLiveResults(results);
           setSearched(true);
-          setError('');
+
+          if (results.length === 0) {
+            setError(
+              'No mapped hotel listings were found. Use the hotel search links to see more results.'
+            );
+          }
         }
       } catch (caught) {
         if (cancelled || controller.signal.aborted) return;
 
         setLiveResults([]);
         setSearched(true);
+
         setError(
           caught instanceof Error
             ? caught.message
-            : 'Unable to retrieve accommodation listings right now.'
+            : 'Unable to retrieve hotel listings.'
         );
       } finally {
         if (!cancelled) {
@@ -335,45 +466,31 @@ const AccommodationFinder: React.FC<AccommodationFinderProps> = ({
       cancelled = true;
       controller.abort();
     };
-  }, [destinationName, accommodations, retryKey]);
+  }, [destination, accommodations, retryKey]);
 
-  const openHotelSearch = () => {
-    window.open(
-      bookingSearchUrl(destinationName),
-      '_blank',
-      'noopener,noreferrer'
-    );
+  const openExternal = (url: string) => {
+    window.open(url, '_blank', 'noopener,noreferrer');
   };
 
-  const openGoogleMapsSearch = () => {
-    window.open(
-      `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
-        `hotels in ${destinationName}`
-      )}`,
-      '_blank',
-      'noopener,noreferrer'
-    );
-  };
+  const mapsSearchUrl = makeMapsSearchUrl(destination);
+  const bookingSearchUrl = makeBookingSearchUrl(destination);
 
   return (
     <section className="space-y-6 rounded-3xl border border-[#D8C3A5] bg-[#FAF7F0] p-5 sm:p-7">
       {/* Header */}
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
-        <div>
-          <div className="flex items-center gap-3">
-            <div className="rounded-2xl bg-[#4B294F] p-3">
-              <Hotel className="h-6 w-6 text-white" />
-            </div>
+        <div className="flex items-center gap-3">
+          <div className="rounded-2xl bg-[#4B294F] p-3">
+            <Hotel className="h-6 w-6 text-white" />
+          </div>
 
-            <div>
-              <h2 className="text-xl font-bold text-[#4B294F] sm:text-2xl">
-                Hotels & Accommodation
-              </h2>
-
-              <p className="mt-1 text-sm text-gray-600">
-                Find real accommodation around {destinationName || 'your destination'}.
-              </p>
-            </div>
+          <div>
+            <h2 className="text-xl font-bold text-[#4B294F] sm:text-2xl">
+              Hotels & Accommodation
+            </h2>
+            <p className="mt-1 text-sm text-gray-600">
+              Find accommodation near {destination || 'your destination'}.
+            </p>
           </div>
         </div>
 
@@ -381,7 +498,7 @@ const AccommodationFinder: React.FC<AccommodationFinderProps> = ({
           type="button"
           onClick={() => setRetryKey((value) => value + 1)}
           disabled={loading}
-          className="inline-flex items-center justify-center gap-2 rounded-xl border border-[#D8C3A5] bg-white px-4 py-3 text-sm font-semibold text-[#4B294F] transition hover:bg-[#F3EAF7] disabled:opacity-50"
+          className="inline-flex items-center justify-center gap-2 rounded-xl border border-[#D8C3A5] bg-white px-4 py-3 text-sm font-semibold text-[#4B294F] hover:bg-[#F3EAF7] disabled:opacity-50"
         >
           {loading ? (
             <Loader2 className="h-4 w-4 animate-spin" />
@@ -392,63 +509,64 @@ const AccommodationFinder: React.FC<AccommodationFinderProps> = ({
         </button>
       </div>
 
-      {/* External hotel search */}
+      {/* Always-visible links: these do not depend on API results */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <button
-          type="button"
-          onClick={openHotelSearch}
-          className="flex items-center justify-center gap-2 rounded-2xl bg-[#4B294F] px-4 py-3.5 text-sm font-semibold text-white transition hover:opacity-90"
+        <a
+          href={mapsSearchUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center justify-center gap-2 rounded-2xl bg-[#4B294F] px-4 py-4 text-sm font-semibold text-white transition hover:opacity-90"
         >
-          <Search className="h-4 w-4" />
-          Find hotels & prices
+          <MapPin className="h-5 w-5" />
+          Find real hotels on Google Maps
           <ExternalLink className="h-4 w-4" />
-        </button>
+        </a>
 
-        <button
-          type="button"
-          onClick={openGoogleMapsSearch}
-          className="flex items-center justify-center gap-2 rounded-2xl border border-[#D8C3A5] bg-white px-4 py-3.5 text-sm font-semibold text-[#4B294F] transition hover:bg-[#F3EAF7]"
+        <a
+          href={bookingSearchUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center justify-center gap-2 rounded-2xl border border-[#D8C3A5] bg-white px-4 py-4 text-sm font-semibold text-[#4B294F] transition hover:bg-[#F3EAF7]"
         >
-          <MapPin className="h-4 w-4 text-[#C2185B]" />
-          Browse hotels on Google Maps
+          <Search className="h-5 w-5" />
+          Check hotels and prices
           <ExternalLink className="h-4 w-4" />
-        </button>
+        </a>
       </div>
 
-      {/* Data transparency */}
       <div className="rounded-xl border border-[#D8C3A5] bg-white p-4 text-xs leading-5 text-gray-600">
-        Hotel names and coordinates come from available map records. Official
-        websites, prices, ratings, reviews, and room availability are shown
-        only when available from a suitable source. Use the booking and review
-        links to check current details.
+        Live map listings are retrieved from OpenStreetMap. Hotel photos,
+        ratings, guest reviews, prices, and room availability may not be
+        included in those records. Use the links above to check current
+        booking information.
       </div>
 
-      {/* Loading */}
+      {/* Loading state */}
       {loading && (
-        <div className="flex flex-col items-center justify-center gap-3 py-12 text-[#4B294F]">
+        <div
+          role="status"
+          className="flex flex-col items-center gap-3 rounded-2xl bg-white py-10 text-[#4B294F]"
+        >
           <Loader2 className="h-9 w-9 animate-spin" />
-
-          <p className="text-sm font-medium">
-            Finding accommodation near {destinationName}…
+          <p className="text-sm font-semibold">
+            Searching nearby accommodation…
           </p>
-
-          <p className="text-xs text-gray-500">
-            Searching available geographic listings.
+          <p className="px-4 text-center text-xs text-gray-500">
+            The hotel-search links above are already available while this
+            search runs.
           </p>
         </div>
       )}
 
-      {/* Error */}
+      {/* Errors and fallback links */}
       {!loading && error && (
         <div className="space-y-4 rounded-2xl border border-amber-300 bg-amber-50 p-5">
           <div className="flex items-start gap-3 text-amber-900">
             <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
-
             <div>
               <h3 className="font-bold">
-                Could not load nearby hotel listings
+                Online hotel listings unavailable
               </h3>
-
               <p className="mt-1 text-sm">{error}</p>
             </div>
           </div>
@@ -457,68 +575,49 @@ const AccommodationFinder: React.FC<AccommodationFinderProps> = ({
             <button
               type="button"
               onClick={() => setRetryKey((value) => value + 1)}
-              className="rounded-xl bg-[#4B294F] px-4 py-2.5 text-sm font-semibold text-white"
+              className="rounded-xl bg-[#4B294F] px-4 py-3 text-sm font-semibold text-white"
             >
-              Try again
+              Retry search
             </button>
 
-            <button
-              type="button"
-              onClick={openHotelSearch}
-              className="inline-flex items-center gap-2 rounded-xl border border-[#D8C3A5] bg-white px-4 py-2.5 text-sm font-semibold text-[#4B294F]"
+            <a
+              href={mapsSearchUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 rounded-xl border border-[#D8C3A5] bg-white px-4 py-3 text-sm font-semibold text-[#4B294F]"
             >
-              Search booking websites
+              Open Google Maps
               <ExternalLink className="h-4 w-4" />
-            </button>
+            </a>
           </div>
         </div>
       )}
 
-      {/* Empty results */}
-      {!loading && !error && searched && liveResults.length === 0 && (
-        <div className="space-y-4 rounded-2xl border border-dashed border-[#D8C3A5] bg-white p-8 text-center">
-          <Hotel className="mx-auto h-12 w-12 text-[#9B72CF]" />
-
-          <h3 className="text-lg font-bold text-[#4B294F]">
-            No mapped hotels found
-          </h3>
-
-          <p className="mx-auto max-w-lg text-sm leading-6 text-gray-600">
-            There may be hotels in this area that are not listed in
-            OpenStreetMap. Search booking websites or Google Maps for
-            additional results.
-          </p>
-
-          <div className="flex flex-wrap justify-center gap-3">
-            <button
-              type="button"
-              onClick={openHotelSearch}
-              className="inline-flex items-center gap-2 rounded-xl bg-[#4B294F] px-5 py-3 text-sm font-semibold text-white"
-            >
-              Find hotels
-              <ExternalLink className="h-4 w-4" />
-            </button>
-
-            <button
-              type="button"
-              onClick={openGoogleMapsSearch}
-              className="inline-flex items-center gap-2 rounded-xl border border-[#D8C3A5] px-5 py-3 text-sm font-semibold text-[#4B294F]"
-            >
-              Google Maps
-              <MapPin className="h-4 w-4" />
-            </button>
+      {/* Empty state */}
+      {!loading &&
+        searched &&
+        !error &&
+        liveResults.length === 0 && (
+          <div className="space-y-4 rounded-2xl border border-dashed border-[#D8C3A5] bg-white p-8 text-center">
+            <Hotel className="mx-auto h-12 w-12 text-[#9B72CF]" />
+            <h3 className="text-lg font-bold text-[#4B294F]">
+              No mapped hotels found
+            </h3>
+            <p className="mx-auto max-w-lg text-sm leading-6 text-gray-600">
+              This does not mean there are no hotels. The map provider may
+              not have listings for this area. Use the hotel search links
+              above to explore additional options.
+            </p>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Hotel cards */}
+      {/* Results */}
       {!loading && liveResults.length > 0 && (
-        <>
+        <div className="space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h3 className="font-bold text-[#4B294F]">
-              Accommodation near {destinationName}
+              Accommodation near {destination}
             </h3>
-
             <span className="rounded-full bg-[#EDE2F2] px-3 py-1.5 text-xs font-semibold text-[#4B294F]">
               {liveResults.length} listings found
             </span>
@@ -526,21 +625,15 @@ const AccommodationFinder: React.FC<AccommodationFinderProps> = ({
 
           <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
             {liveResults.map((item) => {
-              const officialWebsite = item.website?.startsWith('https://')
-                || item.website?.startsWith('http://')
-                ? item.website
-                : item.website
-                  ? `https://${item.website}`
-                  : undefined;
-
-              const photoUrl = item.photoUrl;
+              const website = normaliseWebsite(item.website);
+              const photoUrl = normaliseWebsite(item.photoUrl);
 
               return (
                 <article
                   key={String(item.id)}
-                  className="flex flex-col overflow-hidden rounded-2xl border border-[#D8C3A5] bg-white shadow-sm transition duration-200 hover:-translate-y-0.5 hover:shadow-md"
+                  className="flex flex-col overflow-hidden rounded-2xl border border-[#D8C3A5] bg-white shadow-sm transition hover:shadow-md"
                 >
-                  {/* Photo */}
+                  {/* Photo area */}
                   <div className="relative h-48 bg-gradient-to-br from-[#EDE2F2] to-[#D8C3A5]">
                     {photoUrl ? (
                       <img
@@ -556,17 +649,16 @@ const AccommodationFinder: React.FC<AccommodationFinderProps> = ({
                       <div className="flex h-full flex-col items-center justify-center gap-2 text-[#4B294F]">
                         <Hotel className="h-12 w-12" />
                         <span className="text-sm font-semibold">
-                          Accommodation listing
+                          Hotel listing
                         </span>
                       </div>
                     )}
 
-                    <span className="absolute left-3 top-3 rounded-full bg-white/95 px-3 py-1.5 text-xs font-semibold text-[#4B294F] shadow-sm">
+                    <span className="absolute left-3 top-3 rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-[#4B294F] shadow">
                       {item.category || 'Accommodation'}
                     </span>
                   </div>
 
-                  {/* Details */}
                   <div className="flex flex-1 flex-col gap-4 p-5">
                     <div>
                       <h3 className="text-lg font-bold leading-snug text-[#4B294F]">
@@ -579,17 +671,12 @@ const AccommodationFinder: React.FC<AccommodationFinderProps> = ({
                           <span>{item.address}</span>
                         </p>
                       )}
-
-                      <p className="mt-2 text-xs text-gray-500">
-                        Coordinates: {item.lat.toFixed(5)},{' '}
-                        {item.lon.toFixed(5)}
-                      </p>
                     </div>
 
-                    {/* Verified rating or honest alternative */}
+                    {/* Only show ratings if actual data exists */}
                     <div className="flex flex-wrap items-center gap-2">
                       {typeof item.rating === 'number' ? (
-                        <span className="inline-flex items-center gap-1 rounded-lg bg-[#FFF4D8] px-2.5 py-1.5 text-sm font-bold text-[#704B00]">
+                        <span className="inline-flex items-center gap-1 rounded-lg bg-amber-50 px-2.5 py-1.5 text-sm font-bold text-amber-800">
                           <Star className="h-4 w-4 fill-current" />
                           {item.rating.toFixed(1)}
                           {item.ratingScale
@@ -598,7 +685,7 @@ const AccommodationFinder: React.FC<AccommodationFinderProps> = ({
                         </span>
                       ) : (
                         <span className="rounded-lg bg-gray-100 px-2.5 py-1.5 text-xs text-gray-600">
-                          Rating not provided
+                          Check guest ratings online
                         </span>
                       )}
 
@@ -609,26 +696,26 @@ const AccommodationFinder: React.FC<AccommodationFinderProps> = ({
                       )}
                     </div>
 
-                    {/* Amenities */}
-                    {item.amenities && item.amenities.length > 0 && (
-                      <div className="flex flex-wrap gap-2">
-                        {item.amenities.slice(0, 4).map((amenity) => (
-                          <span
-                            key={amenity}
-                            className="rounded-full bg-[#F3EAF7] px-2.5 py-1 text-xs text-[#4B294F]"
-                          >
-                            {amenity}
-                          </span>
-                        ))}
-                      </div>
-                    )}
+                    {item.amenities &&
+                      item.amenities.length > 0 && (
+                        <div className="flex flex-wrap gap-2">
+                          {item.amenities.slice(0, 4).map((amenity) => (
+                            <span
+                              key={amenity}
+                              className="rounded-full bg-[#F3EAF7] px-2.5 py-1 text-xs text-[#4B294F]"
+                            >
+                              {amenity}
+                            </span>
+                          ))}
+                        </div>
+                      )}
 
                     {/* Price */}
                     <div className="rounded-xl bg-[#FAF7F0] p-3">
                       {typeof item.nightlyRate === 'number' ? (
                         <>
                           <p className="text-xs text-gray-500">
-                            Nightly price from available data
+                            Listed nightly rate
                           </p>
                           <p className="mt-1 flex items-center gap-1 text-lg font-bold text-[#4B294F]">
                             <IndianRupee className="h-4 w-4" />
@@ -644,22 +731,22 @@ const AccommodationFinder: React.FC<AccommodationFinderProps> = ({
                             Check current price
                           </p>
                           <p className="mt-1 text-xs text-gray-500">
-                            Prices depend on your dates, room, and provider.
+                            Price depends on your dates and room type.
                           </p>
                         </>
                       )}
                     </div>
 
-                    {/* Actions */}
+                    {/* Hotel actions */}
                     <div className="mt-auto grid grid-cols-2 gap-2">
                       <a
                         href={
                           item.googleMapsUrl ||
-                          mapsUrl(item.name, item.lat, item.lon)
+                          makeMapsUrl(item.name, item.lat, item.lon)
                         }
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#4B294F] px-3 py-3 text-xs font-semibold text-white transition hover:opacity-90"
+                        className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#4B294F] px-3 py-3 text-xs font-semibold text-white hover:opacity-90"
                       >
                         <MapPin className="h-4 w-4" />
                         View map
@@ -667,32 +754,38 @@ const AccommodationFinder: React.FC<AccommodationFinderProps> = ({
 
                       <a
                         href={
-                          officialWebsite ||
-                          hotelSearchUrl(item.name, destinationName)
+                          website ||
+                          makeOfficialWebsiteSearchUrl(
+                            item.name,
+                            destination
+                          )
                         }
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="inline-flex items-center justify-center gap-2 rounded-xl border border-[#D8C3A5] px-3 py-3 text-xs font-semibold text-[#4B294F] transition hover:bg-[#F3EAF7]"
+                        className="inline-flex items-center justify-center gap-2 rounded-xl border border-[#D8C3A5] px-3 py-3 text-xs font-semibold text-[#4B294F] hover:bg-[#F3EAF7]"
                       >
                         <Globe className="h-4 w-4" />
-                        {officialWebsite ? 'Website' : 'Find hotel'}
+                        {website ? 'Official website' : 'Find website'}
                       </a>
 
                       <a
-                        href={bookingSearchUrl(destinationName, item.name)}
+                        href={makeBookingSearchUrl(destination, item.name)}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="inline-flex items-center justify-center gap-2 rounded-xl border border-[#D8C3A5] px-3 py-3 text-xs font-semibold text-[#4B294F] transition hover:bg-[#F3EAF7]"
+                        className="inline-flex items-center justify-center gap-2 rounded-xl border border-[#D8C3A5] px-3 py-3 text-xs font-semibold text-[#4B294F] hover:bg-[#F3EAF7]"
                       >
                         <Search className="h-4 w-4" />
                         Check rooms
                       </a>
 
                       <a
-                        href={reviewSearchUrl(item.name, destinationName)}
+                        href={makeReviewsSearchUrl(
+                          item.name,
+                          destination
+                        )}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="inline-flex items-center justify-center gap-2 rounded-xl border border-[#D8C3A5] px-3 py-3 text-xs font-semibold text-[#4B294F] transition hover:bg-[#F3EAF7]"
+                        className="inline-flex items-center justify-center gap-2 rounded-xl border border-[#D8C3A5] px-3 py-3 text-xs font-semibold text-[#4B294F] hover:bg-[#F3EAF7]"
                       >
                         <MessageSquare className="h-4 w-4" />
                         Guest reviews
@@ -702,7 +795,7 @@ const AccommodationFinder: React.FC<AccommodationFinderProps> = ({
                         <button
                           type="button"
                           onClick={() => onFocusMap(item)}
-                          className="col-span-2 inline-flex items-center justify-center gap-2 rounded-xl border border-[#D8C3A5] px-3 py-3 text-xs font-semibold text-[#4B294F] transition hover:bg-[#F3EAF7]"
+                          className="col-span-2 inline-flex items-center justify-center gap-2 rounded-xl border border-[#D8C3A5] px-3 py-3 text-xs font-semibold text-[#4B294F] hover:bg-[#F3EAF7]"
                         >
                           <Navigation className="h-4 w-4" />
                           Show in trip map
@@ -717,16 +810,16 @@ const AccommodationFinder: React.FC<AccommodationFinderProps> = ({
                     )}
 
                     <p className="text-xs leading-5 text-gray-500">
-                      Listing source: {item.source || 'Provided map data'}.
-                      Confirm the hotel's details, reviews, prices, and
-                      availability with the linked provider before booking.
+                      Source: {item.source || 'Map listing'}. Verify
+                      current prices, reviews, and availability before
+                      booking.
                     </p>
                   </div>
                 </article>
               );
             })}
           </div>
-        </>
+        </div>
       )}
     </section>
   );
