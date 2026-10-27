@@ -211,24 +211,46 @@ export async function getPlacesForCoordinates(lat: number, lon: number, destinat
   return combinedPlaces;
 }
 
+
 export async function getAccommodationsForCoordinates(
   lat: number,
   lon: number,
   destinationName: string,
   travelStyle = 'balanced'
 ): Promise<any[]> {
-  const overpassAccommodations = await queryOverpassAccommodations(lat, lon, destinationName);
-  const verifiedAccommodations = getVerifiedAccommodationsForDestination(destinationName, lat, lon);
+  const overpassAccommodations = await queryOverpassAccommodations(
+    lat,
+    lon,
+    destinationName
+  );
+
+  const verifiedAccommodations =
+    getVerifiedAccommodationsForDestination(destinationName, lat, lon);
 
   const combinedAccommodations: any[] = [...verifiedAccommodations];
-  const seenNames = new Set(verifiedAccommodations.map(a => a.name.toLowerCase().trim()));
+  const seenNames = new Set(
+    verifiedAccommodations.map(a => a.name.toLowerCase().trim())
+  );
+
+  for (const accommodation of overpassAccommodations) {
+    const key = accommodation.name.toLowerCase().trim();
+
+    if (!seenNames.has(key)) {
+      seenNames.add(key);
+      combinedAccommodations.push(accommodation);
+    }
+  }
 
   const tier: 'lowest' | 'balanced' | 'comfort' =
     travelStyle === 'budget' || travelStyle === 'lowest'
       ? 'lowest'
       : travelStyle === 'comfort'
-      ? 'comfort'
-      : 'balanced';
+        ? 'comfort'
+        : 'balanced';
 
-  return enrichAccommodationsList(combinedAccommodations, destinationName, tier);
+  return enrichAccommodationsList(
+    combinedAccommodations,
+    destinationName,
+    tier
+  );
 }
