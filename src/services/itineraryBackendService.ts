@@ -4,12 +4,11 @@
  * Runs deterministically with full anti-hallucination guarantees and optional Gemini AI enrichment.
  */
 
-import { executeGeminiPrompt } from './geminiService.ts';
-import { getVerifiedPlacesForDestination, isCoordinateInIndia } from '../data/verifiedPlaces.ts';
-import { findInternationalDestination } from '../data/internationalDestinations.ts';
-import { findVerifiedDestination } from '../data/verifiedPlaces.ts';
-import { DESTINATIONS_DATA } from '../data/destinations.ts';
-
+import { executeGeminiPrompt } from './geminiService.js';
+import { getVerifiedPlacesForDestination, isCoordinateInIndia } from '../data/verifiedPlaces.js';
+import { findInternationalDestination } from '../data/internationalDestinations.js';
+import { findVerifiedDestination } from '../data/verifiedPlaces.js';
+import { DESTINATIONS_DATA } from '../data/destinations.js';
 export interface BudgetOptimizationParams {
   totalBudget: number;
   travelers: number;
