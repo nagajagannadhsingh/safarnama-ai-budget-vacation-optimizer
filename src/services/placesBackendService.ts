@@ -8,10 +8,9 @@ import {
   getVerifiedAccommodationsForDestination,
   haversineDistanceKm,
   isCoordinateInIndia
-} from '../data/verifiedPlaces.ts';
-import { findInternationalDestination } from '../data/internationalDestinations.ts';
-import { enrichAccommodationsList } from '../data/enrichedAccommodations.ts';
-
+} from '../data/verifiedPlaces.js';
+import { findInternationalDestination } from '../data/internationalDestinations.js';
+import { enrichAccommodationsList } from '../data/enrichedAccommodations.js';
 const OVERPASS_MIRRORS = [
   'https://overpass-api.de/api/interpreter',
   'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
