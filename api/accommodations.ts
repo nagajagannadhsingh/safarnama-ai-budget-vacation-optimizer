@@ -1,7 +1,7 @@
-import { enableCors, sendJson, sendError, getQueryParam, getRequestBody } from '../src/services/serverlessUtils.ts';
-import { getAccommodationsForCoordinates } from '../src/services/placesBackendService.ts';
-import { generateDeterministicReviewInsights } from '../src/data/enrichedAccommodations.ts';
-import { executeGeminiPrompt } from '../src/services/geminiService.ts';
+import { enableCors, sendJson, sendError, getQueryParam, getRequestBody } from '../src/services/serverlessUtils.js'
+import { getAccommodationsForCoordinates } from '../src/services/placesBackendService.js';
+import { generateDeterministicReviewInsights } from '../src/data/enrichedAccommodations.js';
+import { executeGeminiPrompt } from '../src/services/geminiService.js';
 
 export default async function handler(req: any, res: any) {
   if (enableCors(req, res)) return;
