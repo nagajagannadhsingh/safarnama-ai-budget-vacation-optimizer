@@ -1,7 +1,6 @@
-import { enableCors, sendJson, sendError, getRequestBody, getQueryParam } from '../src/services/serverlessUtils.ts';
-import { generateFullItinerary } from '../src/services/itineraryBackendService.ts';
-import { executeGeminiPrompt } from '../src/services/geminiService.ts';
-
+import { enableCors, sendJson, sendError, getRequestBody, getQueryParam } from '../src/services/serverlessUtils.js';
+import { generateFullItinerary } from '../src/services/itineraryBackendService.js';
+import { executeGeminiPrompt } from '../src/services/geminiService.js';
 export default async function handler(req: any, res: any) {
   if (enableCors(req, res)) return;
 
