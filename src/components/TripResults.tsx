@@ -39,3 +39,4 @@ import {
 
 import { getGoogleMapsSearchUrl } from '../utils/googleMaps';
 import { exportTripPlanToPDF } from '../services/pdfExport';
+export default TripResults;
