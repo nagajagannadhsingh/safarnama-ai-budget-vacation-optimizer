@@ -1,7 +1,7 @@
 import type { PlaceItem, AccommodationItem } from '../types.ts';
 import { getGoogleMapsSearchUrl } from '../utils/googleMaps.ts';
 import { ADDITIONAL_VERIFIED_DESTINATIONS } from './additionalVerifiedDestinations.js'
-import { TEMPLES_DATA, type TempleDetail } from './temples.ts';
+import { TEMPLES_DATA, type TempleDetail } from './temples.js';
 
 /**
  * Validates if coordinates are geographically within the Indian subcontinent boundary.
