@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from 'react';
 import { AccommodationItem } from '../types';
 import {
@@ -9,6 +8,11 @@ import {
   RefreshCw,
   AlertTriangle,
   Search,
+  Star,
+  Globe,
+  MessageSquare,
+  IndianRupee,
+  Navigation,
 } from 'lucide-react';
 
 interface AccommodationFinderProps {
@@ -26,7 +30,9 @@ interface OSMElement {
   tags?: Record<string, string>;
 }
 
-const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search';
+const NOMINATIM_URL =
+  'https://nominatim.openstreetmap.org/search';
+
 const OVERPASS_URLS = [
   'https://overpass-api.de/api/interpreter',
   'https://overpass.kumi.systems/api/interpreter',
@@ -38,11 +44,34 @@ function mapsUrl(name: string, lat: number, lon: number) {
   )}`;
 }
 
-function toAccommodation(element: OSMElement): AccommodationItem | null {
+function hotelSearchUrl(name: string, destination: string) {
+  return `https://www.google.com/search?q=${encodeURIComponent(
+    `${name} hotel ${destination} official website`
+  )}`;
+}
+
+function bookingSearchUrl(destination: string, hotelName?: string) {
+  const query = hotelName
+    ? `${hotelName} ${destination}`
+    : `hotels in ${destination}`;
+
+  return `https://www.booking.com/searchresults.html?ss=${encodeURIComponent(
+    query
+  )}`;
+}
+
+function reviewSearchUrl(name: string, destination: string) {
+  return `https://www.google.com/search?q=${encodeURIComponent(
+    `${name} ${destination} hotel reviews`
+  )}`;
+}
+
+function toAccommodation(
+  element: OSMElement
+): AccommodationItem | null {
   const tags = element.tags || {};
   const lat = element.lat ?? element.center?.lat;
   const lon = element.lon ?? element.center?.lon;
-
   const name = tags.name || tags['name:en'];
 
   if (
@@ -82,6 +111,24 @@ function toAccommodation(element: OSMElement): AccommodationItem | null {
 
   const id = `osm-${element.type}-${element.id}`;
 
+  const website =
+    tags.website ||
+    tags['contact:website'] ||
+    tags.url ||
+    undefined;
+
+  const photoUrl =
+    tags.image ||
+    undefined;
+
+  const amenities = [
+    tags.internet_access === 'wlan' ? 'Wi-Fi listed' : '',
+    tags.parking ? 'Parking listed' : '',
+    tags.air_conditioning ? 'Air conditioning listed' : '',
+    tags.swimming_pool ? 'Swimming pool listed' : '',
+    tags.restaurant ? 'Restaurant listed' : '',
+  ].filter(Boolean);
+
   return {
     id,
     name,
@@ -91,15 +138,12 @@ function toAccommodation(element: OSMElement): AccommodationItem | null {
     lon,
     address: address || undefined,
     phone: tags.phone || tags['contact:phone'] || null,
-    website: tags.website || tags['contact:website'] || null,
+    website,
+    photoUrl,
     source: 'OpenStreetMap',
     placeId: element.id,
     googleMapsUrl: mapsUrl(name, lat, lon),
-    amenities: [
-      tags.internet_access === 'wlan' ? 'Wi-Fi (listed)' : '',
-      tags.parking ? 'Parking (listed)' : '',
-      tags.air_conditioning ? 'Air conditioning (listed)' : '',
-    ].filter(Boolean),
+    amenities,
     currency: 'INR',
   };
 }
@@ -109,7 +153,8 @@ const AccommodationFinder: React.FC<AccommodationFinderProps> = ({
   destinationName,
   onFocusMap,
 }) => {
-  const [liveResults, setLiveResults] = useState<AccommodationItem[]>([]);
+  const [liveResults, setLiveResults] =
+    useState<AccommodationItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [searched, setSearched] = useState(false);
@@ -124,8 +169,9 @@ const AccommodationFinder: React.FC<AccommodationFinderProps> = ({
 
       if (!destination) {
         setLiveResults([]);
-        setError('Enter a destination to search for accommodation.');
+        setError('Enter a destination to find nearby accommodation.');
         setSearched(true);
+        setLoading(false);
         return;
       }
 
@@ -134,10 +180,12 @@ const AccommodationFinder: React.FC<AccommodationFinderProps> = ({
       setSearched(false);
 
       try {
-        // First try the existing application data.
+        // Prefer real accommodation records already supplied by the app.
         if (accommodations.length > 0) {
-          setLiveResults(accommodations);
-          setSearched(true);
+          if (!cancelled) {
+            setLiveResults(accommodations);
+            setSearched(true);
+          }
           return;
         }
 
@@ -181,15 +229,17 @@ const AccommodationFinder: React.FC<AccommodationFinderProps> = ({
           lon < -180 ||
           lon > 180
         ) {
-          throw new Error('The location provider returned invalid coordinates.');
+          throw new Error(
+            'The location provider returned invalid coordinates.'
+          );
         }
 
-        // Query mapped accommodation within approximately 10 km.
+        // Search actual mapped accommodation records near the destination.
         const query = `
           [out:json][timeout:25];
           (
-            node(around:10000,${lat},${lon})["tourism"~"^(hotel|hostel|guest_house|motel|apartment|chalet|alpine_hut|camp_site)$"]["name"];
-            way(around:10000,${lat},${lon})["tourism"~"^(hotel|hostel|guest_house|motel|apartment|chalet|alpine_hut|camp_site)$"]["name"];
+            node(around:10000,${lat},${lon})["tourism"~"^(hotel|hostel|guest_house|motel|apartment|chalet|camp_site)$"]["name"];
+            way(around:10000,${lat},${lon})["tourism"~"^(hotel|hostel|guest_house|motel|apartment|chalet|camp_site)$"]["name"];
             relation(around:10000,${lat},${lon})["tourism"~"^(hotel|hostel|guest_house|motel|apartment|chalet|camp_site)$"]["name"];
             node(around:10000,${lat},${lon})["amenity"="hotel"]["name"];
             way(around:10000,${lat},${lon})["amenity"="hotel"]["name"];
@@ -205,29 +255,37 @@ const AccommodationFinder: React.FC<AccommodationFinderProps> = ({
             const response = await fetch(endpoint, {
               method: 'POST',
               headers: {
-                'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+                'Content-Type':
+                  'application/x-www-form-urlencoded;charset=UTF-8',
                 Accept: 'application/json',
               },
-              body: new URLSearchParams({ data: query }).toString(),
+              body: new URLSearchParams({
+                data: query,
+              }).toString(),
               signal: controller.signal,
             });
 
             if (!response.ok) {
-              throw new Error(`Accommodation search failed (HTTP ${response.status}).`);
+              throw new Error(
+                `Accommodation search failed (HTTP ${response.status}).`
+              );
             }
 
-            const data: { elements?: OSMElement[] } = await response.json();
+            const data: { elements?: OSMElement[] } =
+              await response.json();
+
             elements = data.elements || [];
+            lastError = undefined;
             break;
           } catch (caught) {
-            if (controller.signal.aborted) throw caught;
+            if (controller.signal.aborted) return;
             lastError = caught;
           }
         }
 
-        if (controller.signal.aborted) return;
+        if (controller.signal.aborted || cancelled) return;
 
-        if (elements.length === 0 && lastError) {
+        if (lastError && elements.length === 0) {
           throw lastError;
         }
 
@@ -235,7 +293,14 @@ const AccommodationFinder: React.FC<AccommodationFinderProps> = ({
 
         for (const element of elements) {
           const item = toAccommodation(element);
-          if (item) unique.set(item.name.toLowerCase(), item);
+
+          if (item) {
+            const key = `${item.name.toLowerCase()}-${item.lat.toFixed(
+              4
+            )}-${item.lon.toFixed(4)}`;
+
+            unique.set(key, item);
+          }
         }
 
         const results = Array.from(unique.values()).sort((a, b) =>
@@ -258,7 +323,9 @@ const AccommodationFinder: React.FC<AccommodationFinderProps> = ({
             : 'Unable to retrieve accommodation listings right now.'
         );
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
     }
 
@@ -270,33 +337,51 @@ const AccommodationFinder: React.FC<AccommodationFinderProps> = ({
     };
   }, [destinationName, accommodations, retryKey]);
 
-  const openExternalSearch = () => {
-    const url = `https://www.google.com/maps/search/${encodeURIComponent(
-      `hotels and guest houses in ${destinationName}`
-    )}`;
-    window.open(url, '_blank', 'noopener,noreferrer');
+  const openHotelSearch = () => {
+    window.open(
+      bookingSearchUrl(destinationName),
+      '_blank',
+      'noopener,noreferrer'
+    );
+  };
+
+  const openGoogleMapsSearch = () => {
+    window.open(
+      `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+        `hotels in ${destinationName}`
+      )}`,
+      '_blank',
+      'noopener,noreferrer'
+    );
   };
 
   return (
-    <section className="rounded-3xl border border-[#D8C3A5] bg-[#FAF7F0] p-5 sm:p-7 space-y-5">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <section className="space-y-6 rounded-3xl border border-[#D8C3A5] bg-[#FAF7F0] p-5 sm:p-7">
+      {/* Header */}
+      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
         <div>
-          <div className="flex items-center gap-2">
-            <Hotel className="h-6 w-6 text-[#4B294F]" />
-            <h2 className="text-xl sm:text-2xl font-bold text-[#4B294F]">
-              Accommodation Finder
-            </h2>
+          <div className="flex items-center gap-3">
+            <div className="rounded-2xl bg-[#4B294F] p-3">
+              <Hotel className="h-6 w-6 text-white" />
+            </div>
+
+            <div>
+              <h2 className="text-xl font-bold text-[#4B294F] sm:text-2xl">
+                Hotels & Accommodation
+              </h2>
+
+              <p className="mt-1 text-sm text-gray-600">
+                Find real accommodation around {destinationName || 'your destination'}.
+              </p>
+            </div>
           </div>
-          <p className="mt-2 text-sm text-gray-600">
-            Real mapped accommodation listings near {destinationName}.
-          </p>
         </div>
 
         <button
           type="button"
           onClick={() => setRetryKey((value) => value + 1)}
           disabled={loading}
-          className="inline-flex items-center justify-center gap-2 rounded-xl border border-[#D8C3A5] bg-white px-4 py-2.5 text-sm font-semibold text-[#4B294F] disabled:opacity-50"
+          className="inline-flex items-center justify-center gap-2 rounded-xl border border-[#D8C3A5] bg-white px-4 py-3 text-sm font-semibold text-[#4B294F] transition hover:bg-[#F3EAF7] disabled:opacity-50"
         >
           {loading ? (
             <Loader2 className="h-4 w-4 animate-spin" />
@@ -307,146 +392,340 @@ const AccommodationFinder: React.FC<AccommodationFinderProps> = ({
         </button>
       </div>
 
-      <div className="rounded-xl bg-white p-3 text-xs text-gray-600">
-        Source: OpenStreetMap contributors. Listings depend on the map data
-        available for the destination. Prices, guest ratings, reviews, and room
-        availability are not provided by this search.
+      {/* External hotel search */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <button
+          type="button"
+          onClick={openHotelSearch}
+          className="flex items-center justify-center gap-2 rounded-2xl bg-[#4B294F] px-4 py-3.5 text-sm font-semibold text-white transition hover:opacity-90"
+        >
+          <Search className="h-4 w-4" />
+          Find hotels & prices
+          <ExternalLink className="h-4 w-4" />
+        </button>
+
+        <button
+          type="button"
+          onClick={openGoogleMapsSearch}
+          className="flex items-center justify-center gap-2 rounded-2xl border border-[#D8C3A5] bg-white px-4 py-3.5 text-sm font-semibold text-[#4B294F] transition hover:bg-[#F3EAF7]"
+        >
+          <MapPin className="h-4 w-4 text-[#C2185B]" />
+          Browse hotels on Google Maps
+          <ExternalLink className="h-4 w-4" />
+        </button>
       </div>
 
+      {/* Data transparency */}
+      <div className="rounded-xl border border-[#D8C3A5] bg-white p-4 text-xs leading-5 text-gray-600">
+        Hotel names and coordinates come from available map records. Official
+        websites, prices, ratings, reviews, and room availability are shown
+        only when available from a suitable source. Use the booking and review
+        links to check current details.
+      </div>
+
+      {/* Loading */}
       {loading && (
         <div className="flex flex-col items-center justify-center gap-3 py-12 text-[#4B294F]">
-          <Loader2 className="h-8 w-8 animate-spin" />
+          <Loader2 className="h-9 w-9 animate-spin" />
+
           <p className="text-sm font-medium">
-            Searching accommodation around {destinationName}…
+            Finding accommodation near {destinationName}…
+          </p>
+
+          <p className="text-xs text-gray-500">
+            Searching available geographic listings.
           </p>
         </div>
       )}
 
+      {/* Error */}
       {!loading && error && (
-        <div className="rounded-2xl border border-amber-300 bg-amber-50 p-5 space-y-3">
-          <div className="flex items-start gap-2 text-amber-900">
-            <AlertTriangle className="h-5 w-5 shrink-0 mt-0.5" />
+        <div className="space-y-4 rounded-2xl border border-amber-300 bg-amber-50 p-5">
+          <div className="flex items-start gap-3 text-amber-900">
+            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+
             <div>
-              <p className="font-semibold">Could not retrieve listings</p>
+              <h3 className="font-bold">
+                Could not load nearby hotel listings
+              </h3>
+
               <p className="mt-1 text-sm">{error}</p>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={openExternalSearch}
-            className="inline-flex items-center gap-2 rounded-xl bg-[#4B294F] px-4 py-2.5 text-sm font-semibold text-white"
-          >
-            <Search className="h-4 w-4" />
-            Search hotels on Google Maps
-            <ExternalLink className="h-3.5 w-3.5" />
-          </button>
+
+          <div className="flex flex-wrap gap-3">
+            <button
+              type="button"
+              onClick={() => setRetryKey((value) => value + 1)}
+              className="rounded-xl bg-[#4B294F] px-4 py-2.5 text-sm font-semibold text-white"
+            >
+              Try again
+            </button>
+
+            <button
+              type="button"
+              onClick={openHotelSearch}
+              className="inline-flex items-center gap-2 rounded-xl border border-[#D8C3A5] bg-white px-4 py-2.5 text-sm font-semibold text-[#4B294F]"
+            >
+              Search booking websites
+              <ExternalLink className="h-4 w-4" />
+            </button>
+          </div>
         </div>
       )}
 
+      {/* Empty results */}
       {!loading && !error && searched && liveResults.length === 0 && (
-        <div className="rounded-2xl border border-dashed border-[#D8C3A5] bg-white p-8 text-center space-y-4">
-          <Hotel className="mx-auto h-10 w-10 text-[#9B72CF]" />
-          <h3 className="font-bold text-[#4B294F]">
-            No mapped accommodation found
+        <div className="space-y-4 rounded-2xl border border-dashed border-[#D8C3A5] bg-white p-8 text-center">
+          <Hotel className="mx-auto h-12 w-12 text-[#9B72CF]" />
+
+          <h3 className="text-lg font-bold text-[#4B294F]">
+            No mapped hotels found
           </h3>
-          <p className="text-sm text-gray-600">
-            OpenStreetMap may not have accommodation records for this area.
-            Search a nearby city or use the external hotel search.
+
+          <p className="mx-auto max-w-lg text-sm leading-6 text-gray-600">
+            There may be hotels in this area that are not listed in
+            OpenStreetMap. Search booking websites or Google Maps for
+            additional results.
           </p>
-          <button
-            type="button"
-            onClick={openExternalSearch}
-            className="inline-flex items-center gap-2 rounded-xl bg-[#4B294F] px-5 py-3 text-sm font-semibold text-white"
-          >
-            Find hotels near {destinationName}
-            <ExternalLink className="h-4 w-4" />
-          </button>
+
+          <div className="flex flex-wrap justify-center gap-3">
+            <button
+              type="button"
+              onClick={openHotelSearch}
+              className="inline-flex items-center gap-2 rounded-xl bg-[#4B294F] px-5 py-3 text-sm font-semibold text-white"
+            >
+              Find hotels
+              <ExternalLink className="h-4 w-4" />
+            </button>
+
+            <button
+              type="button"
+              onClick={openGoogleMapsSearch}
+              className="inline-flex items-center gap-2 rounded-xl border border-[#D8C3A5] px-5 py-3 text-sm font-semibold text-[#4B294F]"
+            >
+              Google Maps
+              <MapPin className="h-4 w-4" />
+            </button>
+          </div>
         </div>
       )}
 
+      {/* Hotel cards */}
       {!loading && liveResults.length > 0 && (
         <>
-          <p className="text-sm font-semibold text-[#4B294F]">
-            {liveResults.length} mapped accommodation listing
-            {liveResults.length === 1 ? '' : 's'} found
-          </p>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className="font-bold text-[#4B294F]">
+              Accommodation near {destinationName}
+            </h3>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {liveResults.map((item) => (
-              <article
-                key={String(item.id)}
-                className="rounded-2xl border border-[#D8C3A5] bg-white p-5 flex flex-col gap-3"
-              >
-                <div>
-                  <h3 className="text-lg font-bold text-[#4B294F]">
-                    {item.name}
-                  </h3>
-                  <p className="mt-1 text-xs text-gray-500">
-                    {item.category || 'Accommodation'}
-                  </p>
-                </div>
-
-                {item.address && (
-                  <p className="text-sm text-gray-600">{item.address}</p>
-                )}
-
-                <div className="flex items-start gap-2 text-sm text-gray-600">
-                  <MapPin className="h-4 w-4 shrink-0 mt-0.5 text-[#C2185B]" />
-                  <span>
-                    {item.lat.toFixed(5)}, {item.lon.toFixed(5)}
-                  </span>
-                </div>
-
-                <p className="text-xs text-gray-500">
-                  No verified price or guest rating is available from this
-                  map listing.
-                </p>
-
-                <div className="mt-auto flex flex-wrap gap-2 pt-2">
-                  <a
-                    href={
-                      item.googleMapsUrl ||
-                      mapsUrl(item.name, item.lat, item.lon)
-                    }
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-2 rounded-xl bg-[#4B294F] px-3 py-2 text-xs font-semibold text-white"
-                  >
-                    View on map
-                    <ExternalLink className="h-3.5 w-3.5" />
-                  </a>
-
-                  {item.website && (
-                    <a
-                      href={item.website}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-2 rounded-xl border border-[#D8C3A5] px-3 py-2 text-xs font-semibold text-[#4B294F]"
-                    >
-                      Website
-                      <ExternalLink className="h-3.5 w-3.5" />
-                    </a>
-                  )}
-
-                  {onFocusMap && (
-                    <button
-                      type="button"
-                      onClick={() => onFocusMap(item)}
-                      className="rounded-xl border border-[#D8C3A5] px-3 py-2 text-xs font-semibold text-[#4B294F]"
-                    >
-                      Show in trip map
-                    </button>
-                  )}
-                </div>
-              </article>
-            ))}
+            <span className="rounded-full bg-[#EDE2F2] px-3 py-1.5 text-xs font-semibold text-[#4B294F]">
+              {liveResults.length} listings found
+            </span>
           </div>
 
-          <p className="text-xs text-gray-500">
-            Map records are not proof of current operation, room availability,
-            guest-review authenticity, or booking prices. Verify these details
-            with the accommodation provider before booking.
-          </p>
+          <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+            {liveResults.map((item) => {
+              const officialWebsite = item.website?.startsWith('https://')
+                || item.website?.startsWith('http://')
+                ? item.website
+                : item.website
+                  ? `https://${item.website}`
+                  : undefined;
+
+              const photoUrl = item.photoUrl;
+
+              return (
+                <article
+                  key={String(item.id)}
+                  className="flex flex-col overflow-hidden rounded-2xl border border-[#D8C3A5] bg-white shadow-sm transition duration-200 hover:-translate-y-0.5 hover:shadow-md"
+                >
+                  {/* Photo */}
+                  <div className="relative h-48 bg-gradient-to-br from-[#EDE2F2] to-[#D8C3A5]">
+                    {photoUrl ? (
+                      <img
+                        src={photoUrl}
+                        alt={item.name}
+                        loading="lazy"
+                        className="h-full w-full object-cover"
+                        onError={(event) => {
+                          event.currentTarget.style.display = 'none';
+                        }}
+                      />
+                    ) : (
+                      <div className="flex h-full flex-col items-center justify-center gap-2 text-[#4B294F]">
+                        <Hotel className="h-12 w-12" />
+                        <span className="text-sm font-semibold">
+                          Accommodation listing
+                        </span>
+                      </div>
+                    )}
+
+                    <span className="absolute left-3 top-3 rounded-full bg-white/95 px-3 py-1.5 text-xs font-semibold text-[#4B294F] shadow-sm">
+                      {item.category || 'Accommodation'}
+                    </span>
+                  </div>
+
+                  {/* Details */}
+                  <div className="flex flex-1 flex-col gap-4 p-5">
+                    <div>
+                      <h3 className="text-lg font-bold leading-snug text-[#4B294F]">
+                        {item.name}
+                      </h3>
+
+                      {item.address && (
+                        <p className="mt-2 flex items-start gap-2 text-sm text-gray-600">
+                          <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-[#C2185B]" />
+                          <span>{item.address}</span>
+                        </p>
+                      )}
+
+                      <p className="mt-2 text-xs text-gray-500">
+                        Coordinates: {item.lat.toFixed(5)},{' '}
+                        {item.lon.toFixed(5)}
+                      </p>
+                    </div>
+
+                    {/* Verified rating or honest alternative */}
+                    <div className="flex flex-wrap items-center gap-2">
+                      {typeof item.rating === 'number' ? (
+                        <span className="inline-flex items-center gap-1 rounded-lg bg-[#FFF4D8] px-2.5 py-1.5 text-sm font-bold text-[#704B00]">
+                          <Star className="h-4 w-4 fill-current" />
+                          {item.rating.toFixed(1)}
+                          {item.ratingScale
+                            ? ` / ${item.ratingScale}`
+                            : ''}
+                        </span>
+                      ) : (
+                        <span className="rounded-lg bg-gray-100 px-2.5 py-1.5 text-xs text-gray-600">
+                          Rating not provided
+                        </span>
+                      )}
+
+                      {typeof item.reviewCount === 'number' && (
+                        <span className="text-xs text-gray-500">
+                          {item.reviewCount.toLocaleString()} reviews
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Amenities */}
+                    {item.amenities && item.amenities.length > 0 && (
+                      <div className="flex flex-wrap gap-2">
+                        {item.amenities.slice(0, 4).map((amenity) => (
+                          <span
+                            key={amenity}
+                            className="rounded-full bg-[#F3EAF7] px-2.5 py-1 text-xs text-[#4B294F]"
+                          >
+                            {amenity}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Price */}
+                    <div className="rounded-xl bg-[#FAF7F0] p-3">
+                      {typeof item.nightlyRate === 'number' ? (
+                        <>
+                          <p className="text-xs text-gray-500">
+                            Nightly price from available data
+                          </p>
+                          <p className="mt-1 flex items-center gap-1 text-lg font-bold text-[#4B294F]">
+                            <IndianRupee className="h-4 w-4" />
+                            {item.nightlyRate.toLocaleString('en-IN')}
+                            <span className="text-xs font-normal text-gray-500">
+                              / night
+                            </span>
+                          </p>
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-sm font-semibold text-[#4B294F]">
+                            Check current price
+                          </p>
+                          <p className="mt-1 text-xs text-gray-500">
+                            Prices depend on your dates, room, and provider.
+                          </p>
+                        </>
+                      )}
+                    </div>
+
+                    {/* Actions */}
+                    <div className="mt-auto grid grid-cols-2 gap-2">
+                      <a
+                        href={
+                          item.googleMapsUrl ||
+                          mapsUrl(item.name, item.lat, item.lon)
+                        }
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#4B294F] px-3 py-3 text-xs font-semibold text-white transition hover:opacity-90"
+                      >
+                        <MapPin className="h-4 w-4" />
+                        View map
+                      </a>
+
+                      <a
+                        href={
+                          officialWebsite ||
+                          hotelSearchUrl(item.name, destinationName)
+                        }
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center justify-center gap-2 rounded-xl border border-[#D8C3A5] px-3 py-3 text-xs font-semibold text-[#4B294F] transition hover:bg-[#F3EAF7]"
+                      >
+                        <Globe className="h-4 w-4" />
+                        {officialWebsite ? 'Website' : 'Find hotel'}
+                      </a>
+
+                      <a
+                        href={bookingSearchUrl(destinationName, item.name)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center justify-center gap-2 rounded-xl border border-[#D8C3A5] px-3 py-3 text-xs font-semibold text-[#4B294F] transition hover:bg-[#F3EAF7]"
+                      >
+                        <Search className="h-4 w-4" />
+                        Check rooms
+                      </a>
+
+                      <a
+                        href={reviewSearchUrl(item.name, destinationName)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center justify-center gap-2 rounded-xl border border-[#D8C3A5] px-3 py-3 text-xs font-semibold text-[#4B294F] transition hover:bg-[#F3EAF7]"
+                      >
+                        <MessageSquare className="h-4 w-4" />
+                        Guest reviews
+                      </a>
+
+                      {onFocusMap && (
+                        <button
+                          type="button"
+                          onClick={() => onFocusMap(item)}
+                          className="col-span-2 inline-flex items-center justify-center gap-2 rounded-xl border border-[#D8C3A5] px-3 py-3 text-xs font-semibold text-[#4B294F] transition hover:bg-[#F3EAF7]"
+                        >
+                          <Navigation className="h-4 w-4" />
+                          Show in trip map
+                        </button>
+                      )}
+                    </div>
+
+                    {item.phone && (
+                      <p className="text-xs text-gray-500">
+                        Phone listed: {item.phone}
+                      </p>
+                    )}
+
+                    <p className="text-xs leading-5 text-gray-500">
+                      Listing source: {item.source || 'Provided map data'}.
+                      Confirm the hotel's details, reviews, prices, and
+                      availability with the linked provider before booking.
+                    </p>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
         </>
       )}
     </section>
