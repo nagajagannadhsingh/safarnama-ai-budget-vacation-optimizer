@@ -1,6 +1,5 @@
-import { enableCors, sendJson, sendError, getQueryParam } from '../src/services/serverlessUtils.ts';
-import { haversineDistanceKm } from '../src/data/verifiedPlaces.ts';
-
+import { enableCors, sendJson, sendError, getQueryParam } from '../src/services/serverlessUtils.js';
+import { haversineDistanceKm } from '../src/data/verifiedPlaces.js';
 export default async function handler(req: any, res: any) {
   if (enableCors(req, res)) return;
 
