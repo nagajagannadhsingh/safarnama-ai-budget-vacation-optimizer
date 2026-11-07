@@ -41,7 +41,7 @@ import { exportTripPlanToPDF } from '../services/pdfExport';
 interface TripResultsProps {
   planResult: TripPlanResult;
   onSelectTier: (tier: 'lowest' | 'balanced' | 'comfort') => void;
-  onSaveTrip: () => void;
+  onSaveTrip: () => Promise<void>;
   onModifyPreferences: () => void;
   onRetryAI?: () => void;
   isRetryingAI?: boolean;
@@ -77,7 +77,12 @@ export const TripResults: React.FC<TripResultsProps> = ({
     PlaceItem | AccommodationItem | null
   >(null);
 
+  // Save Trip states
+  const [isSavingTrip, setIsSavingTrip] = useState(false);
   const [saveSuccessNotice, setSaveSuccessNotice] = useState(false);
+  const [saveErrorMessage, setSaveErrorMessage] = useState<string | null>(null);
+
+  // PDF export states
   const [isExportingPDF, setIsExportingPDF] = useState(false);
   const [pdfSuccessMessage, setPdfSuccessMessage] = useState<string | null>(null);
   const [pdfErrorMessage, setPdfErrorMessage] = useState<string | null>(null);
@@ -103,10 +108,33 @@ export const TripResults: React.FC<TripResultsProps> = ({
     aiAnalysis,
   } = currentPlan;
 
-  const handleSaveClick = () => {
-    onSaveTrip();
-    setSaveSuccessNotice(true);
-    window.setTimeout(() => setSaveSuccessNotice(false), 3000);
+  // Save trip only after the parent confirms that Firestore saving succeeded.
+  const handleSaveClick = async () => {
+    if (isSavingTrip) return;
+
+    setIsSavingTrip(true);
+    setSaveSuccessNotice(false);
+    setSaveErrorMessage(null);
+
+    try {
+      await onSaveTrip();
+
+      setSaveSuccessNotice(true);
+
+      window.setTimeout(() => {
+        setSaveSuccessNotice(false);
+      }, 3000);
+    } catch (error) {
+      console.error('Save Trip Error:', error);
+
+      setSaveErrorMessage(
+        error instanceof Error
+          ? error.message
+          : 'Unable to save your trip. Please try again.'
+      );
+    } finally {
+      setIsSavingTrip(false);
+    }
   };
 
   const handleExportPDF = async () => {
@@ -116,9 +144,11 @@ export const TripResults: React.FC<TripResultsProps> = ({
 
     try {
       await exportTripPlanToPDF(currentPlan);
+
       setPdfSuccessMessage(
         'Trip itinerary PDF generated and downloaded successfully!'
       );
+
       window.setTimeout(() => setPdfSuccessMessage(null), 4000);
     } catch (error: unknown) {
       console.error('PDF Export Error:', error);
@@ -291,10 +321,24 @@ export const TripResults: React.FC<TripResultsProps> = ({
                 <button
                   type="button"
                   onClick={handleSaveClick}
-                  className="flex-1 px-4 py-2.5 rounded-xl bg-[#C2185B] hover:bg-[#A7134D] text-white font-bold text-xs transition-colors flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
+                  disabled={isSavingTrip}
+                  className="flex-1 px-4 py-2.5 rounded-xl bg-[#C2185B] hover:bg-[#A7134D] disabled:opacity-60 disabled:cursor-not-allowed text-white font-bold text-xs transition-colors flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
                 >
-                  <Bookmark className="w-3.5 h-3.5 text-white" />
-                  <span>{saveSuccessNotice ? 'Saved!' : 'Save Trip'}</span>
+                  {isSavingTrip ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : saveSuccessNotice ? (
+                    <CheckCircle2 className="w-3.5 h-3.5 text-white" />
+                  ) : (
+                    <Bookmark className="w-3.5 h-3.5 text-white" />
+                  )}
+
+                  <span>
+                    {isSavingTrip
+                      ? 'Saving...'
+                      : saveSuccessNotice
+                        ? 'Saved!'
+                        : 'Save Trip'}
+                  </span>
                 </button>
 
                 <button
@@ -307,6 +351,26 @@ export const TripResults: React.FC<TripResultsProps> = ({
                   <span>Edit</span>
                 </button>
               </div>
+
+              {saveSuccessNotice && (
+                <div
+                  role="status"
+                  className="p-2.5 rounded-lg bg-emerald-500/20 border border-emerald-400/40 text-emerald-100 text-xs flex items-center gap-2"
+                >
+                  <CheckCircle2 className="w-4 h-4 text-emerald-300 shrink-0" />
+                  <span>Your trip was saved successfully!</span>
+                </div>
+              )}
+
+              {saveErrorMessage && (
+                <div
+                  role="alert"
+                  className="p-2.5 rounded-lg bg-rose-500/20 border border-rose-400/40 text-rose-100 text-xs flex items-center gap-2"
+                >
+                  <AlertTriangle className="w-4 h-4 text-rose-300 shrink-0" />
+                  <span>Save failed: {saveErrorMessage}</span>
+                </div>
+              )}
 
               <button
                 type="button"
