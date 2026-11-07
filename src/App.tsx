@@ -163,6 +163,7 @@ export default function App() {
 
   // Save the current journey to the signed-in user's Firestore account.
 
+
 const handleSaveCurrentTrip = async (): Promise<void> => {
   if (!planResult || !user) {
     throw new Error('Please sign in before saving a trip.');
@@ -173,13 +174,11 @@ const handleSaveCurrentTrip = async (): Promise<void> => {
   try {
     await saveUserTrip(user.uid, planResult);
 
-    // Refresh the saved trip count after a successful save.
+    // Refresh the saved trips count.
     try {
       const trips = await getUserSavedTrips(user.uid);
       setSavedTripsCount(trips.length);
     } catch (countError) {
-      // The trip is already saved. A count-refresh error
-      // should not make the save operation appear unsuccessful.
       console.warn('Could not refresh saved trip count:', countError);
       setSavedTripsCount((count) => count + 1);
     }
@@ -195,10 +194,10 @@ const handleSaveCurrentTrip = async (): Promise<void> => {
 
     setErrorMessage(`Unable to save your journey: ${message}`);
 
-    // Pass the failure back to TripResults.
     throw error;
   }
 };
+
 
 
   const handleRunSampleScenario = (autoGenerate = true) => {
