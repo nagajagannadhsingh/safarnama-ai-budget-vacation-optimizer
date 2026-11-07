@@ -162,28 +162,44 @@ export default function App() {
   };
 
   // Save the current journey to the signed-in user's Firestore account.
-  const handleSaveCurrentTrip = async () => {
-    if (!planResult || !user) return;
 
-    setErrorMessage(null);
+const handleSaveCurrentTrip = async (): Promise<void> => {
+  if (!planResult || !user) {
+    throw new Error('Please sign in before saving a trip.');
+  }
 
+  setErrorMessage(null);
+
+  try {
+    await saveUserTrip(user.uid, planResult);
+
+    // Refresh the saved trip count after a successful save.
     try {
-      await saveUserTrip(user.uid, planResult);
-
       const trips = await getUserSavedTrips(user.uid);
       setSavedTripsCount(trips.length);
-
-      setErrorMessage(null);
-    } catch (error) {
-      console.error('Error saving journey:', error);
-
-      setErrorMessage(
-        error instanceof Error
-          ? `Unable to save your journey: ${error.message}`
-          : 'Unable to save your journey. Please try again.'
-      );
+    } catch (countError) {
+      // The trip is already saved. A count-refresh error
+      // should not make the save operation appear unsuccessful.
+      console.warn('Could not refresh saved trip count:', countError);
+      setSavedTripsCount((count) => count + 1);
     }
-  };
+
+    setErrorMessage(null);
+  } catch (error) {
+    console.error('Error saving journey:', error);
+
+    const message =
+      error instanceof Error
+        ? error.message
+        : 'Unable to save your journey. Please try again.';
+
+    setErrorMessage(`Unable to save your journey: ${message}`);
+
+    // Pass the failure back to TripResults.
+    throw error;
+  }
+};
+
 
   const handleRunSampleScenario = (autoGenerate = true) => {
     setFormDataState(SAMPLE_HYDERABAD_GOA);
