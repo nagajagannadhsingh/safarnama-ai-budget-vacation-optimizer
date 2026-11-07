@@ -13,7 +13,7 @@ import {
 import { db } from '../firebase';
 import { SavedTrip, TripPlanResult } from '../types';
 
-// Each Google account gets its own Firestore trips collection.
+// Get the signed-in user's private trips collection.
 const getUserTripsCollection = (userId: string) => {
   if (!userId) {
     throw new Error('A signed-in user is required.');
@@ -22,7 +22,35 @@ const getUserTripsCollection = (userId: string) => {
   return collection(db, 'users', userId, 'trips');
 };
 
-// Retrieve only the signed-in user's saved trips.
+// Remove undefined values before sending data to Firestore.
+// Firestore does not accept undefined values by default.
+const removeUndefinedValues = (value: any): any => {
+  if (Array.isArray(value)) {
+    return value.map((item) =>
+      item === undefined ? null : removeUndefinedValues(item)
+    );
+  }
+
+  if (
+    value !== null &&
+    typeof value === 'object' &&
+    (Object.getPrototypeOf(value) === Object.prototype ||
+      Object.getPrototypeOf(value) === null)
+  ) {
+    return Object.fromEntries(
+      Object.entries(value)
+        .filter(([, item]) => item !== undefined)
+        .map(([key, item]) => [
+          key,
+          removeUndefinedValues(item),
+        ])
+    );
+  }
+
+  return value;
+};
+
+// Retrieve saved trips for the signed-in user.
 export async function getUserSavedTrips(
   userId: string
 ): Promise<SavedTrip[]> {
@@ -39,13 +67,25 @@ export async function getUserSavedTrips(
   } as SavedTrip));
 }
 
-// Save a trip to the signed-in user's Firestore collection.
+// Save a trip to Firestore.
 export async function saveUserTrip(
   userId: string,
   planResult: TripPlanResult,
   customName?: string
 ): Promise<SavedTrip> {
-  const id = planResult.id || `trip_${Date.now()}`;
+  if (!userId) {
+    throw new Error('Please sign in before saving a trip.');
+  }
+
+  if (!planResult?.formData) {
+    throw new Error('Trip details are missing. Please generate the trip again.');
+  }
+
+  const tripsCollection = getUserTripsCollection(userId);
+
+  // Generate a unique Firestore document ID.
+  const tripDocument = doc(tripsCollection);
+  const id = tripDocument.id;
 
   const defaultName =
     `${planResult.formData.origin} to ${planResult.formData.destination} ` +
@@ -54,17 +94,16 @@ export async function saveUserTrip(
   const savedTrip: SavedTrip = {
     id,
     savedAt: new Date().toISOString(),
-    name: customName || defaultName,
+    name: customName?.trim() || defaultName,
     planResult,
   };
 
-  await setDoc(
-    doc(db, 'users', userId, 'trips', id),
-    {
-      ...savedTrip,
-      userId,
-    }
-  );
+  const firestoreData = removeUndefinedValues({
+    ...savedTrip,
+    userId,
+  });
+
+  await setDoc(tripDocument, firestoreData);
 
   return savedTrip;
 }
@@ -97,4 +136,3 @@ export async function deleteUserTrip(
     doc(db, 'users', userId, 'trips', tripId)
   );
 }
-
