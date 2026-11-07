@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { TripFormData, TripPlanResult } from './types';
 import { DestinationDetail, DESTINATIONS_DATA, TRAVEL_QUOTES } from './data/destinations';
@@ -24,7 +25,11 @@ import { getSavedTrips, saveTrip } from './services/storage';
 import { TempleDetail } from './data/temples';
 import { AlertCircle, Compass, Heart, Sparkles } from 'lucide-react';
 
-const SAMPLE_HYDERABAD_GOA: TripFormData = {
+// Firebase authentication
+import { useAuth } from './contexts/AuthContext';
+import { SignIn } from './components/SignIn';
+
+const SAMPLE_HYDERABAD_GO A: TripFormData = {
   origin: 'Hyderabad, Telangana',
   destination: 'Goa',
   totalBudget: 15000,
@@ -39,14 +44,16 @@ const SAMPLE_HYDERABAD_GOA: TripFormData = {
 };
 
 export default function App() {
+  // Check Firebase authentication status
+  const { user, loading } = useAuth();
+
   const [planResult, setPlanResult] = useState<TripPlanResult | null>(null);
-  const [formDataState, setFormDataState] = useState<Partial<TripFormData>>(SAMPLE_HYDERABAD_GOA);
+  const [formDataState, setFormDataState] = useState<Partial<TripFormData>>(SAMPLE_HYDERABAD_GO A);
   const [selectedCategory, setSelectedCategory] = useState<EscapeCategoryType>('All Escapes');
   const [selectedDestinationDetail, setSelectedDestinationDetail] = useState<DestinationDetail | null>(null);
   const [selectedTempleDetail, setSelectedTempleDetail] = useState<TempleDetail | null>(null);
   const [isTempleDiscoveryOpen, setIsTempleDiscoveryOpen] = useState(false);
   const [isDestinationDiscoveryOpen, setIsDestinationDiscoveryOpen] = useState(false);
-
   const [isLoading, setIsLoading] = useState(false);
   const [loadingStepText, setLoadingStepText] = useState('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -76,7 +83,6 @@ export default function App() {
         setLoadingStepText(step);
       });
       setPlanResult(result);
-
       setTimeout(() => {
         const resultsEl = document.getElementById('trip-results-view');
         if (resultsEl) {
@@ -109,9 +115,9 @@ export default function App() {
   };
 
   const handleRunSampleScenario = (autoGenerate = true) => {
-    setFormDataState(SAMPLE_HYDERABAD_GOA);
+    setFormDataState(SAMPLE_HYDERABAD_GO A);
     if (autoGenerate) {
-      handleOptimizeTrip(SAMPLE_HYDERABAD_GOA);
+      handleOptimizeTrip(SAMPLE_HYDERABAD_GO A);
     } else {
       scrollToSection('plan-form');
     }
@@ -138,6 +144,22 @@ export default function App() {
     setIsTempleDiscoveryOpen(false);
     scrollToSection('plan-form');
   };
+
+  // Wait for Firebase to restore the user's login session.
+  if (loading) {
+    return (
+      <main className="min-h-screen bg-[#FAF7F0] flex items-center justify-center">
+        <p className="text-[#4B294F] font-semibold">
+          Loading your SAFARNAMA account...
+        </p>
+      </main>
+    );
+  }
+
+  // Require Google sign-in before showing the travel planner.
+  if (!user) {
+    return <SignIn />;
+  }
 
   return (
     <div className="min-h-screen bg-[#FAF7F0] text-[#24212B] font-sans flex flex-col justify-between selection:bg-[#78C9D0]/30 selection:text-[#4B294F]">
@@ -188,13 +210,13 @@ export default function App() {
           onCreateJourneyClick={() => scrollToSection('plan-form')}
         />
 
-        {/* 3. Section A — "Find Your Kind of Escape" */}
+        {/* 3. Section A — Find Your Kind of Escape */}
         <EscapeCategories
           selectedCategory={selectedCategory}
           onSelectCategory={(cat) => setSelectedCategory(cat)}
         />
 
-        {/* 4. Section B — "Places That Take Your Breath Away" */}
+        {/* 4. Section B — Places That Take Your Breath Away */}
         <FeaturedPlaces
           onDiscoverPlace={(dest) => setSelectedDestinationDetail(dest)}
           onPlanTrip={handlePlanDestinationShortcut}
@@ -207,7 +229,7 @@ export default function App() {
           onViewAllTemples={() => setIsTempleDiscoveryOpen(true)}
         />
 
-        {/* 6. Quote Interlude 1 — Section C */}
+        {/* 6. Quote Interlude 1 */}
         <QuoteSection
           quote={TRAVEL_QUOTES[0].quote}
           tagline="A Little Inspiration for the Road"
@@ -222,7 +244,7 @@ export default function App() {
           onOpenDiscoveryModal={() => setIsDestinationDiscoveryOpen(true)}
         />
 
-        {/* 8. Section 6 — "How SAFARNAMA AI Works" */}
+        {/* 8. How SAFARNAMA AI Works */}
         <HowItWorksSection />
 
         {/* 9. Quote Interlude 2 */}
@@ -233,13 +255,13 @@ export default function App() {
           authorLabel="SAFARNAMA AI · Desert Horizons & Mountain Dawns"
         />
 
-        {/* 10. Section D — "Beautiful Journeys, Smaller Budgets" */}
+        {/* 10. Beautiful Journeys, Smaller Budgets */}
         <BudgetFriendlySpotlight
           onPlanTrip={handlePlanDestinationShortcut}
           onDiscoverPlace={(dest) => setSelectedDestinationDetail(dest)}
         />
 
-        {/* 11. Section E — "Explore India on the Map" */}
+        {/* 11. Explore India on the Map */}
         <MapExplorerSection
           onPlanTrip={handlePlanDestinationShortcut}
           onDiscoverPlace={(dest) => setSelectedDestinationDetail(dest)}
@@ -253,7 +275,7 @@ export default function App() {
           authorLabel="SAFARNAMA AI · Sacred Rivers & Quiet Waters"
         />
 
-        {/* 13. Trip Planning Form Container */}
+        {/* 13. Trip Planning Form */}
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
           <TripForm
             onSubmit={handleOptimizeTrip}
@@ -264,7 +286,7 @@ export default function App() {
           />
         </div>
 
-        {/* 14. Results Dashboard Container (Rendered when planResult is available) */}
+        {/* 14. Results Dashboard */}
         {planResult && (
           <div id="trip-results-view" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
             <TripResults
@@ -279,7 +301,7 @@ export default function App() {
           </div>
         )}
 
-        {/* 15. Section F — "Your Next Story Starts Here" */}
+        {/* 15. Your Next Story Starts Here */}
         <ClosingStorySection
           onPlanTripClick={() => scrollToSection('plan-form')}
           onExploreClick={() => scrollToSection('destinations-gallery')}
