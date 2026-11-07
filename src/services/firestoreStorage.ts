@@ -13,6 +13,96 @@ import {
 import { db } from '../firebase';
 import { SavedTrip, TripPlanResult } from '../types';
 
+// Special marker used to preserve nested arrays in Firestore.
+const NESTED_ARRAY_KEY = '__safarnama_nested_array__';
+
+// Check whether a value is a plain JavaScript object.
+const isPlainObject = (
+  value: unknown
+): value is Record<string, unknown> => {
+  if (value === null || typeof value !== 'object') {
+    return false;
+  }
+
+  const prototype = Object.getPrototypeOf(value);
+
+  return (
+    prototype === Object.prototype ||
+    prototype === null
+  );
+};
+
+// Prepare data for Firestore.
+// Firestore does not support arrays directly inside arrays.
+// Wrap nested arrays inside objects to preserve their structure.
+const prepareForFirestore = (value: unknown): unknown => {
+  if (Array.isArray(value)) {
+    return value.map((item) => {
+      // Undefined array elements are stored as null.
+      if (item === undefined) {
+        return null;
+      }
+
+      // Wrap nested arrays inside an object.
+      if (Array.isArray(item)) {
+        return {
+          [NESTED_ARRAY_KEY]: prepareForFirestore(item),
+        };
+      }
+
+      return prepareForFirestore(item);
+    });
+  }
+
+  if (isPlainObject(value)) {
+    const result: Record<string, unknown> = {};
+
+    for (const [key, item] of Object.entries(value)) {
+      // Firestore does not accept undefined object fields.
+      if (item === undefined) {
+        continue;
+      }
+
+      result[key] = prepareForFirestore(item);
+    }
+
+    return result;
+  }
+
+  return value;
+};
+
+// Restore nested arrays after retrieving data from Firestore.
+const restoreFromFirestore = (value: unknown): unknown => {
+  if (Array.isArray(value)) {
+    return value.map(restoreFromFirestore);
+  }
+
+  if (isPlainObject(value)) {
+    const keys = Object.keys(value);
+
+    // Detect our nested-array wrapper.
+    if (
+      keys.length === 1 &&
+      Array.isArray(value[NESTED_ARRAY_KEY])
+    ) {
+      return restoreFromFirestore(
+        value[NESTED_ARRAY_KEY]
+      );
+    }
+
+    const result: Record<string, unknown> = {};
+
+    for (const [key, item] of Object.entries(value)) {
+      result[key] = restoreFromFirestore(item);
+    }
+
+    return result;
+  }
+
+  return value;
+};
+
 // Get the signed-in user's private trips collection.
 const getUserTripsCollection = (userId: string) => {
   if (!userId) {
@@ -20,33 +110,6 @@ const getUserTripsCollection = (userId: string) => {
   }
 
   return collection(db, 'users', userId, 'trips');
-};
-
-// Remove undefined values before saving data to Firestore.
-const removeUndefinedValues = (value: any): any => {
-  if (Array.isArray(value)) {
-    return value.map((item) =>
-      item === undefined ? null : removeUndefinedValues(item)
-    );
-  }
-
-  if (
-    value !== null &&
-    typeof value === 'object' &&
-    (Object.getPrototypeOf(value) === Object.prototype ||
-      Object.getPrototypeOf(value) === null)
-  ) {
-    return Object.fromEntries(
-      Object.entries(value)
-        .filter(([, item]) => item !== undefined)
-        .map(([key, item]) => [
-          key,
-          removeUndefinedValues(item),
-        ])
-    );
-  }
-
-  return value;
 };
 
 // Retrieve saved trips for the signed-in user.
@@ -60,10 +123,16 @@ export async function getUserSavedTrips(
 
   const snapshot = await getDocs(tripsQuery);
 
-  return snapshot.docs.map((tripDocument) => ({
-    ...tripDocument.data(),
-    id: tripDocument.id,
-  } as SavedTrip));
+  return snapshot.docs.map((tripDocument) => {
+    const tripData = restoreFromFirestore(
+      tripDocument.data()
+    ) as Record<string, unknown>;
+
+    return {
+      ...tripData,
+      id: tripDocument.id,
+    } as unknown as SavedTrip;
+  });
 }
 
 // Save a trip to Firestore.
@@ -99,7 +168,7 @@ export async function saveUserTrip(
     planResult,
   };
 
-  const firestoreData = removeUndefinedValues({
+  const firestoreData = prepareForFirestore({
     ...savedTrip,
     userId,
   });
