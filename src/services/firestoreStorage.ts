@@ -22,8 +22,7 @@ const getUserTripsCollection = (userId: string) => {
   return collection(db, 'users', userId, 'trips');
 };
 
-// Remove undefined values before sending data to Firestore.
-// Firestore does not accept undefined values by default.
+// Remove undefined values before saving data to Firestore.
 const removeUndefinedValues = (value: any): any => {
   if (Array.isArray(value)) {
     return value.map((item) =>
@@ -78,7 +77,9 @@ export async function saveUserTrip(
   }
 
   if (!planResult?.formData) {
-    throw new Error('Trip details are missing. Please generate the trip again.');
+    throw new Error(
+      'Trip details are missing. Please generate the trip again.'
+    );
   }
 
   const tripsCollection = getUserTripsCollection(userId);
