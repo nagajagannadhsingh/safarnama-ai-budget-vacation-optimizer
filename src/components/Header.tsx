@@ -7,7 +7,13 @@ import {
   X,
   ArrowRight,
   Landmark,
+  UserCircle,
+  ChevronDown,
+  LogOut,
+  Mail,
 } from 'lucide-react';
+
+import { useAuth } from '../contexts/AuthContext';
 
 interface HeaderProps {
   onNavigate: (sectionId: string) => void;
@@ -26,8 +32,14 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenTempleDiscovery,
   onOpenDestinationDiscovery,
 }) => {
+  const { user, logOut } = useAuth();
+
   const [isScrolled, setIsScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  const [isSigningOut, setIsSigningOut] = useState(false);
+  const [signOutError, setSignOutError] = useState<string | null>(null);
+  const [avatarFailed, setAvatarFailed] = useState(false);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -40,6 +52,10 @@ export const Header: React.FC<HeaderProps> = ({
       window.removeEventListener('scroll', handleScroll);
     };
   }, []);
+
+  useEffect(() => {
+    setAvatarFailed(false);
+  }, [user?.photoURL]);
 
   const handleNavClick = (sectionId: string) => {
     setMobileMenuOpen(false);
@@ -55,6 +71,31 @@ export const Header: React.FC<HeaderProps> = ({
     }
   };
 
+  const handleSignOut = async () => {
+    if (isSigningOut) return;
+
+    setIsSigningOut(true);
+    setSignOutError(null);
+
+    try {
+      await logOut();
+      setProfileMenuOpen(false);
+      setMobileMenuOpen(false);
+    } catch (error) {
+      console.error('Sign-out error:', error);
+      setSignOutError(
+        'Unable to sign out. Please try again.'
+      );
+    } finally {
+      setIsSigningOut(false);
+    }
+  };
+
+  const displayName =
+    user?.displayName ||
+    user?.email?.split('@')[0] ||
+    'Traveler';
+
   return (
     <header
       className={`sticky top-0 z-40 transition-all duration-300 ${
@@ -64,6 +105,7 @@ export const Header: React.FC<HeaderProps> = ({
       }`}
     >
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 min-h-20 py-2 flex items-center justify-between gap-3">
+
         {/* Brand / Logo */}
         <div
           onClick={() => handleNavClick('hero')}
@@ -157,6 +199,7 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Right CTA Actions */}
         <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
+
           {/* Quick Sample Trigger */}
           <button
             type="button"
@@ -184,6 +227,104 @@ export const Header: React.FC<HeaderProps> = ({
               </span>
             )}
           </button>
+
+          {/* Google Account Profile Menu */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => {
+                setProfileMenuOpen((open) => !open);
+                setSignOutError(null);
+              }}
+              className="flex items-center gap-1.5 sm:gap-2 rounded-xl border border-[#D8C3A5] bg-white hover:bg-[#EEE8F7] px-2 py-1.5 transition-colors shadow-sm cursor-pointer"
+              aria-label="Open Google account menu"
+              aria-expanded={profileMenuOpen}
+              aria-haspopup="true"
+            >
+              {user?.photoURL && !avatarFailed ? (
+                <img
+                  src={user.photoURL}
+                  alt="Google profile"
+                  referrerPolicy="no-referrer"
+                  onError={() => setAvatarFailed(true)}
+                  className="w-8 h-8 rounded-full object-cover border border-[#D8C3A5]"
+                />
+              ) : (
+                <div className="w-8 h-8 rounded-full bg-[#EEE8F7] text-[#4B294F] flex items-center justify-center">
+                  <UserCircle className="w-6 h-6" />
+                </div>
+              )}
+
+              <span className="hidden sm:block max-w-24 truncate text-xs font-heading font-semibold text-[#4B294F]">
+                {displayName}
+              </span>
+
+              <ChevronDown className="w-3.5 h-3.5 text-[#77717F]" />
+            </button>
+
+            {profileMenuOpen && (
+              <div className="absolute right-0 top-full mt-3 w-72 max-w-[calc(100vw-2rem)] rounded-2xl border border-[#D8C3A5] bg-[#FAF7F0] shadow-xl overflow-hidden z-50">
+
+                {/* Account Details */}
+                <div className="p-4 bg-white border-b border-[#D8C3A5]/70">
+                  <div className="flex items-center gap-3">
+                    {user?.photoURL && !avatarFailed ? (
+                      <img
+                        src={user.photoURL}
+                        alt="Google profile"
+                        referrerPolicy="no-referrer"
+                        onError={() => setAvatarFailed(true)}
+                        className="w-12 h-12 rounded-full object-cover border-2 border-[#78C9D0]"
+                      />
+                    ) : (
+                      <div className="w-12 h-12 rounded-full bg-[#EEE8F7] text-[#4B294F] flex items-center justify-center">
+                        <UserCircle className="w-9 h-9" />
+                      </div>
+                    )}
+
+                    <div className="min-w-0 flex-1">
+                      <p className="font-heading font-bold text-sm text-[#4B294F] truncate">
+                        {displayName}
+                      </p>
+
+                      <p className="text-xs text-[#77717F] truncate mt-1 flex items-center gap-1">
+                        <Mail className="w-3 h-3 shrink-0" />
+                        {user?.email || 'Google account'}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 inline-flex items-center gap-1.5 text-[10px] font-semibold text-[#4B294F] bg-[#EEE8F7] px-2.5 py-1 rounded-full">
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#78C9D0]" />
+                    Google account connected
+                  </div>
+                </div>
+
+                {/* Sign Out */}
+                <div className="p-3">
+                  {signOutError && (
+                    <p className="text-xs text-[#C2185B] mb-2 px-2">
+                      {signOutError}
+                    </p>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={handleSignOut}
+                    disabled={isSigningOut}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-[#C2185B] hover:bg-[#A7134D] disabled:opacity-60 disabled:cursor-not-allowed text-white text-sm font-heading font-semibold transition-colors cursor-pointer"
+                  >
+                    <LogOut className="w-4 h-4" />
+                    {isSigningOut ? 'Signing out...' : 'Sign Out'}
+                  </button>
+
+                  <p className="text-[10px] text-center text-[#77717F] mt-2">
+                    Your saved journeys remain securely stored.
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
 
           {/* Plan Journey Primary CTA */}
           <button
