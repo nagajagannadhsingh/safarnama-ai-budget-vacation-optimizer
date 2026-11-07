@@ -14,7 +14,7 @@ import { db } from '../firebase';
 import { SavedTrip, TripPlanResult } from '../types';
 
 // Special marker used to preserve nested arrays in Firestore.
-const NESTED_ARRAY_KEY = '__safarnama_nested_array__';
+const NESTED_ARRAY_KEY = 'safarnamaNestedArrayData';
 
 // Check whether a value is a plain JavaScript object.
 const isPlainObject = (
