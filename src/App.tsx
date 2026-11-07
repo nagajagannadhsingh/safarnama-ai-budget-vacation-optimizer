@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { TripFormData, TripPlanResult } from './types';
-import { DestinationDetail, DESTINATIONS_DATA, TRAVEL_QUOTES } from './data/destinations';
+import { DestinationDetail, TRAVEL_QUOTES } from './data/destinations';
 import { Header } from './components/Header';
 import { Hero } from './components/Hero';
 import { EscapeCategories, EscapeCategoryType } from './components/EscapeCategories';
@@ -21,11 +21,13 @@ import { TempleDetailModal } from './components/TempleDetailModal';
 import { TempleDiscoveryModal } from './components/TempleDiscoveryModal';
 import { SavedTripsModal } from './components/SavedTripsModal';
 import { generateFullTripPlan } from './services/api';
-import { getSavedTrips, saveTrip } from './services/storage';
+import {
+  getUserSavedTrips,
+  saveUserTrip,
+} from './services/firestoreStorage';
 import { TempleDetail } from './data/temples';
 import { AlertCircle, Compass } from 'lucide-react';
 
-// Firebase authentication
 import { useAuth } from './contexts/AuthContext';
 import { SignIn } from './components/SignIn';
 
@@ -40,34 +42,76 @@ const SAMPLE_HYDERABAD_GOA: TripFormData = {
   accommodationPref: 'budget hotel',
   interests: ['nature', 'beaches'],
   travelStyle: 'budget',
-  specialPreferences: 'Prefer scenic beach walking, authentic Goan fish curry / local thali, and historic fort viewpoints'
+  specialPreferences:
+    'Prefer scenic beach walking, authentic Goan fish curry / local thali, and historic fort viewpoints',
 };
 
 export default function App() {
-  // Check Firebase authentication status
+  // Firebase authentication
   const { user, loading } = useAuth();
 
   const [planResult, setPlanResult] = useState<TripPlanResult | null>(null);
-  const [formDataState, setFormDataState] = useState<Partial<TripFormData>>(SAMPLE_HYDERABAD_GOA);
-  const [selectedCategory, setSelectedCategory] = useState<EscapeCategoryType>('All Escapes');
-  const [selectedDestinationDetail, setSelectedDestinationDetail] = useState<DestinationDetail | null>(null);
-  const [selectedTempleDetail, setSelectedTempleDetail] = useState<TempleDetail | null>(null);
+  const [formDataState, setFormDataState] =
+    useState<Partial<TripFormData>>(SAMPLE_HYDERABAD_GOA);
+
+  const [selectedCategory, setSelectedCategory] =
+    useState<EscapeCategoryType>('All Escapes');
+
+  const [selectedDestinationDetail, setSelectedDestinationDetail] =
+    useState<DestinationDetail | null>(null);
+
+  const [selectedTempleDetail, setSelectedTempleDetail] =
+    useState<TempleDetail | null>(null);
+
   const [isTempleDiscoveryOpen, setIsTempleDiscoveryOpen] = useState(false);
-  const [isDestinationDiscoveryOpen, setIsDestinationDiscoveryOpen] = useState(false);
+  const [isDestinationDiscoveryOpen, setIsDestinationDiscoveryOpen] =
+    useState(false);
+
   const [isLoading, setIsLoading] = useState(false);
   const [loadingStepText, setLoadingStepText] = useState('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Modals
+  // Saved journeys
   const [isSavedModalOpen, setIsSavedModalOpen] = useState(false);
-  const [savedTripsCount, setSavedTripsCount] = useState<number>(0);
+  const [savedTripsCount, setSavedTripsCount] = useState(0);
 
+  // Load saved journey count from the signed-in user's Firestore account.
   useEffect(() => {
-    setSavedTripsCount(getSavedTrips().length);
-  }, [isSavedModalOpen, planResult]);
+    if (!user) {
+      setSavedTripsCount(0);
+      return;
+    }
+
+    let active = true;
+
+    const loadSavedTripsCount = async () => {
+      try {
+        const trips = await getUserSavedTrips(user.uid);
+
+        if (active) {
+          setSavedTripsCount(trips.length);
+        }
+      } catch (error) {
+        console.error('Error loading saved journey count:', error);
+
+        if (active) {
+          setErrorMessage(
+            'Unable to load your saved journeys. Please try again.'
+          );
+        }
+      }
+    };
+
+    loadSavedTripsCount();
+
+    return () => {
+      active = false;
+    };
+  }, [user, isSavedModalOpen]);
 
   const scrollToSection = (sectionId: string) => {
     const el = document.getElementById(sectionId);
+
     if (el) {
       el.scrollIntoView({ behavior: 'smooth' });
     }
@@ -82,16 +126,23 @@ export default function App() {
       const result = await generateFullTripPlan(data, (step) => {
         setLoadingStepText(step);
       });
+
       setPlanResult(result);
+
       setTimeout(() => {
         const resultsEl = document.getElementById('trip-results-view');
+
         if (resultsEl) {
           resultsEl.scrollIntoView({ behavior: 'smooth' });
         }
       }, 300);
     } catch (err: any) {
       console.error('Trip generation error:', err);
-      setErrorMessage(err.message || 'An error occurred during trip optimization. Please check your network and retry.');
+
+      setErrorMessage(
+        err.message ||
+          'An error occurred during trip optimization. Please check your network and retry.'
+      );
     } finally {
       setIsLoading(false);
       setLoadingStepText('');
@@ -100,22 +151,43 @@ export default function App() {
 
   const handleSelectTier = (tier: 'lowest' | 'balanced' | 'comfort') => {
     if (!planResult) return;
+
     const newActivePlan = planResult.budgetPlans[tier];
+
     setPlanResult({
       ...planResult,
       activeTier: tier,
-      activePlan: newActivePlan
+      activePlan: newActivePlan,
     });
   };
 
-  const handleSaveCurrentTrip = () => {
-    if (!planResult) return;
-    saveTrip(planResult);
-    setSavedTripsCount(getSavedTrips().length);
+  // Save the current journey to the signed-in user's Firestore account.
+  const handleSaveCurrentTrip = async () => {
+    if (!planResult || !user) return;
+
+    setErrorMessage(null);
+
+    try {
+      await saveUserTrip(user.uid, planResult);
+
+      const trips = await getUserSavedTrips(user.uid);
+      setSavedTripsCount(trips.length);
+
+      setErrorMessage(null);
+    } catch (error) {
+      console.error('Error saving journey:', error);
+
+      setErrorMessage(
+        error instanceof Error
+          ? `Unable to save your journey: ${error.message}`
+          : 'Unable to save your journey. Please try again.'
+      );
+    }
   };
 
   const handleRunSampleScenario = (autoGenerate = true) => {
     setFormDataState(SAMPLE_HYDERABAD_GOA);
+
     if (autoGenerate) {
       handleOptimizeTrip(SAMPLE_HYDERABAD_GOA);
     } else {
@@ -123,23 +195,29 @@ export default function App() {
     }
   };
 
-  const handlePlanDestinationShortcut = (destinationName: string, suggestedBudget: number, suggestedDays: number) => {
-    setFormDataState(prev => ({
+  const handlePlanDestinationShortcut = (
+    destinationName: string,
+    suggestedBudget: number,
+    suggestedDays: number
+  ) => {
+    setFormDataState((prev) => ({
       ...prev,
       destination: destinationName,
       totalBudget: Math.max(5000, suggestedBudget),
-      durationDays: suggestedDays || 3
+      durationDays: suggestedDays || 3,
     }));
+
     scrollToSection('plan-form');
   };
 
   const handleAddToJourney = (placeName: string, city: string) => {
-    setFormDataState(prev => ({
+    setFormDataState((prev) => ({
       ...prev,
       destination: `${placeName}, ${city}`,
       totalBudget: Math.max(8000, prev?.totalBudget || 14000),
-      durationDays: prev?.durationDays || 3
+      durationDays: prev?.durationDays || 3,
     }));
+
     setSelectedTempleDetail(null);
     setIsTempleDiscoveryOpen(false);
     scrollToSection('plan-form');
@@ -177,17 +255,25 @@ export default function App() {
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6">
             <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-900 flex items-start gap-3 shadow-xs">
               <AlertCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+
               <div className="flex-1 text-xs font-sans">
-                <span className="font-bold block text-sm">Trip Optimization Notice</span>
+                <span className="font-bold block text-sm">
+                  Trip Optimization Notice
+                </span>
+
                 <p className="mt-0.5">{errorMessage}</p>
+
                 <div className="mt-2 flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => handleOptimizeTrip(formDataState as TripFormData)}
+                    onClick={() =>
+                      handleOptimizeTrip(formDataState as TripFormData)
+                    }
                     className="px-3.5 py-1.5 bg-[#C2185B] text-white rounded-xl font-bold text-xs hover:bg-[#A7134D] cursor-pointer"
                   >
                     Retry Request
                   </button>
+
                   <button
                     type="button"
                     onClick={() => setErrorMessage(null)}
@@ -238,7 +324,10 @@ export default function App() {
         <HowItWorksSection />
 
         <QuoteSection
-          quote={TRAVEL_QUOTES[1]?.quote || "Every journey begins with a place and becomes a memory."}
+          quote={
+            TRAVEL_QUOTES[1]?.quote ||
+            'Every journey begins with a place and becomes a memory.'
+          }
           tagline="India in a Thousand Stories"
           image={TRAVEL_QUOTES[1]?.image || TRAVEL_QUOTES[0].image}
           authorLabel="SAFARNAMA AI · Desert Horizons & Mountain Dawns"
@@ -255,7 +344,10 @@ export default function App() {
         />
 
         <QuoteSection
-          quote={TRAVEL_QUOTES[2]?.quote || "Your next unforgettable story is one journey away."}
+          quote={
+            TRAVEL_QUOTES[2]?.quote ||
+            'Your next unforgettable story is one journey away.'
+          }
           tagline="The Soul of the Journey"
           image={TRAVEL_QUOTES[2]?.image || TRAVEL_QUOTES[0].image}
           authorLabel="SAFARNAMA AI · Sacred Rivers & Quiet Waters"
@@ -272,13 +364,18 @@ export default function App() {
         </div>
 
         {planResult && (
-          <div id="trip-results-view" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+          <div
+            id="trip-results-view"
+            className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10"
+          >
             <TripResults
               planResult={planResult}
               onSelectTier={handleSelectTier}
               onSaveTrip={handleSaveCurrentTrip}
               onModifyPreferences={() => scrollToSection('plan-form')}
-              onRetryAI={() => handleOptimizeTrip(formDataState as TripFormData)}
+              onRetryAI={() =>
+                handleOptimizeTrip(formDataState as TripFormData)
+              }
               isRetryingAI={isLoading}
               onSelectAlternativeDestination={handlePlanDestinationShortcut}
             />
@@ -299,10 +396,12 @@ export default function App() {
               <div className="w-10 h-10 rounded-2xl bg-[#4B294F] text-[#FAF7F0] flex items-center justify-center font-bold shadow-xs">
                 <Compass className="w-5 h-5 text-[#78C9D0]" />
               </div>
+
               <div>
                 <span className="font-serif font-black text-xl text-[#4B294F] block">
                   SAFARNAMA AI
                 </span>
+
                 <span className="text-[#77717F] text-xs">
                   SAFARNAMA AI – Budget Vacation Optimizer
                 </span>
@@ -310,28 +409,67 @@ export default function App() {
             </div>
 
             <div className="flex flex-wrap items-center justify-center gap-6 text-xs text-[#24212B] font-bold">
-              <button type="button" onClick={() => scrollToSection('hero')} className="hover:text-[#C2185B] transition-colors cursor-pointer">
+              <button
+                type="button"
+                onClick={() => scrollToSection('hero')}
+                className="hover:text-[#C2185B] transition-colors cursor-pointer"
+              >
                 Home
               </button>
-              <button type="button" onClick={() => scrollToSection('categories')} className="hover:text-[#C2185B] transition-colors cursor-pointer">
+
+              <button
+                type="button"
+                onClick={() => scrollToSection('categories')}
+                className="hover:text-[#C2185B] transition-colors cursor-pointer"
+              >
                 Travel Styles
               </button>
-              <button type="button" onClick={() => scrollToSection('temples-section')} className="hover:text-[#C2185B] transition-colors cursor-pointer text-[#4B294F]">
+
+              <button
+                type="button"
+                onClick={() => scrollToSection('temples-section')}
+                className="hover:text-[#C2185B] transition-colors cursor-pointer text-[#4B294F]"
+              >
                 Sacred Temples
               </button>
-              <button type="button" onClick={() => setIsDestinationDiscoveryOpen(true)} className="hover:text-[#C2185B] transition-colors cursor-pointer">
+
+              <button
+                type="button"
+                onClick={() => setIsDestinationDiscoveryOpen(true)}
+                className="hover:text-[#C2185B] transition-colors cursor-pointer"
+              >
                 All Destinations (55+)
               </button>
-              <button type="button" onClick={() => scrollToSection('how-it-works')} className="hover:text-[#C2185B] transition-colors cursor-pointer">
+
+              <button
+                type="button"
+                onClick={() => scrollToSection('how-it-works')}
+                className="hover:text-[#C2185B] transition-colors cursor-pointer"
+              >
                 How It Works
               </button>
-              <button type="button" onClick={() => scrollToSection('map-explorer')} className="hover:text-[#C2185B] transition-colors cursor-pointer">
+
+              <button
+                type="button"
+                onClick={() => scrollToSection('map-explorer')}
+                className="hover:text-[#C2185B] transition-colors cursor-pointer"
+              >
                 Interactive Map
               </button>
-              <button type="button" onClick={() => scrollToSection('plan-form')} className="hover:text-[#C2185B] transition-colors cursor-pointer">
+
+              <button
+                type="button"
+                onClick={() => scrollToSection('plan-form')}
+                className="hover:text-[#C2185B] transition-colors cursor-pointer"
+              >
                 Plan My Trip
               </button>
-              <button type="button" onClick={() => setIsSavedModalOpen(true)} className="hover:text-[#C2185B] transition-colors cursor-pointer">
+
+              <button
+                type="button"
+                onClick={() => setIsSavedModalOpen(true)}
+                className="hover:text-[#C2185B] transition-colors cursor-pointer"
+              >
                 Saved Journeys ({savedTripsCount})
               </button>
             </div>
@@ -339,8 +477,10 @@ export default function App() {
 
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4 text-center sm:text-left text-xs text-[#77717F]">
             <p>
-              SAFARNAMA AI – Budget Vacation Optimizer · Real Indian travel intelligence grounded in OpenStreetMap & verified budget analytics.
+              SAFARNAMA AI – Budget Vacation Optimizer · Real Indian travel
+              intelligence grounded in OpenStreetMap & verified budget analytics.
             </p>
+
             <p className="text-[#C2185B] font-semibold">
               Zero synthetic pricing · All budget estimates verified deterministically
             </p>
@@ -383,12 +523,17 @@ export default function App() {
       <SavedTripsModal
         isOpen={isSavedModalOpen}
         onClose={() => setIsSavedModalOpen(false)}
+        userId={user.uid}
         onOpenTrip={(savedPlan) => {
           setPlanResult(savedPlan);
           setFormDataState(savedPlan.formData);
+
           setTimeout(() => {
             const resultsEl = document.getElementById('trip-results-view');
-            if (resultsEl) resultsEl.scrollIntoView({ behavior: 'smooth' });
+
+            if (resultsEl) {
+              resultsEl.scrollIntoView({ behavior: 'smooth' });
+            }
           }, 200);
         }}
       />
