@@ -23,13 +23,13 @@ import { SavedTripsModal } from './components/SavedTripsModal';
 import { generateFullTripPlan } from './services/api';
 import { getSavedTrips, saveTrip } from './services/storage';
 import { TempleDetail } from './data/temples';
-import { AlertCircle, Compass, Heart, Sparkles } from 'lucide-react';
+import { AlertCircle, Compass } from 'lucide-react';
 
 // Firebase authentication
 import { useAuth } from './contexts/AuthContext';
 import { SignIn } from './components/SignIn';
 
-const SAMPLE_HYDERABAD_GO A: TripFormData = {
+const SAMPLE_HYDERABAD_GOA: TripFormData = {
   origin: 'Hyderabad, Telangana',
   destination: 'Goa',
   totalBudget: 15000,
@@ -48,7 +48,7 @@ export default function App() {
   const { user, loading } = useAuth();
 
   const [planResult, setPlanResult] = useState<TripPlanResult | null>(null);
-  const [formDataState, setFormDataState] = useState<Partial<TripFormData>>(SAMPLE_HYDERABAD_GO A);
+  const [formDataState, setFormDataState] = useState<Partial<TripFormData>>(SAMPLE_HYDERABAD_GOA);
   const [selectedCategory, setSelectedCategory] = useState<EscapeCategoryType>('All Escapes');
   const [selectedDestinationDetail, setSelectedDestinationDetail] = useState<DestinationDetail | null>(null);
   const [selectedTempleDetail, setSelectedTempleDetail] = useState<TempleDetail | null>(null);
@@ -115,9 +115,9 @@ export default function App() {
   };
 
   const handleRunSampleScenario = (autoGenerate = true) => {
-    setFormDataState(SAMPLE_HYDERABAD_GO A);
+    setFormDataState(SAMPLE_HYDERABAD_GOA);
     if (autoGenerate) {
-      handleOptimizeTrip(SAMPLE_HYDERABAD_GO A);
+      handleOptimizeTrip(SAMPLE_HYDERABAD_GOA);
     } else {
       scrollToSection('plan-form');
     }
@@ -145,7 +145,7 @@ export default function App() {
     scrollToSection('plan-form');
   };
 
-  // Wait for Firebase to restore the user's login session.
+  // Wait until Firebase restores the user's login session.
   if (loading) {
     return (
       <main className="min-h-screen bg-[#FAF7F0] flex items-center justify-center">
@@ -163,7 +163,6 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#FAF7F0] text-[#24212B] font-sans flex flex-col justify-between selection:bg-[#78C9D0]/30 selection:text-[#4B294F]">
-      {/* 1. Navigation Header */}
       <Header
         onNavigate={scrollToSection}
         savedTripsCount={savedTripsCount}
@@ -173,9 +172,7 @@ export default function App() {
         onOpenDestinationDiscovery={() => setIsDestinationDiscoveryOpen(true)}
       />
 
-      {/* Main Content Sections */}
       <main className="flex-1">
-        {/* Error notification banner if any */}
         {errorMessage && (
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6">
             <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-900 flex items-start gap-3 shadow-xs">
@@ -204,32 +201,27 @@ export default function App() {
           </div>
         )}
 
-        {/* 2. Cinematic Hero Section */}
         <Hero
           onExploreClick={() => scrollToSection('destinations-gallery')}
           onCreateJourneyClick={() => scrollToSection('plan-form')}
         />
 
-        {/* 3. Section A — Find Your Kind of Escape */}
         <EscapeCategories
           selectedCategory={selectedCategory}
           onSelectCategory={(cat) => setSelectedCategory(cat)}
         />
 
-        {/* 4. Section B — Places That Take Your Breath Away */}
         <FeaturedPlaces
           onDiscoverPlace={(dest) => setSelectedDestinationDetail(dest)}
           onPlanTrip={handlePlanDestinationShortcut}
         />
 
-        {/* 5. Sacred Temples Exploration Section */}
         <SacredTemplesSection
           onExploreTemple={(temple) => setSelectedTempleDetail(temple)}
           onAddToJourney={handleAddToJourney}
           onViewAllTemples={() => setIsTempleDiscoveryOpen(true)}
         />
 
-        {/* 6. Quote Interlude 1 */}
         <QuoteSection
           quote={TRAVEL_QUOTES[0].quote}
           tagline="A Little Inspiration for the Road"
@@ -237,17 +229,14 @@ export default function App() {
           authorLabel="SAFARNAMA AI – Budget Vacation Optimizer"
         />
 
-        {/* 7. Curated Featured Destinations Gallery */}
         <DestinationGallery
           onDiscoverPlace={(dest) => setSelectedDestinationDetail(dest)}
           onPlanTrip={handlePlanDestinationShortcut}
           onOpenDiscoveryModal={() => setIsDestinationDiscoveryOpen(true)}
         />
 
-        {/* 8. How SAFARNAMA AI Works */}
         <HowItWorksSection />
 
-        {/* 9. Quote Interlude 2 */}
         <QuoteSection
           quote={TRAVEL_QUOTES[1]?.quote || "Every journey begins with a place and becomes a memory."}
           tagline="India in a Thousand Stories"
@@ -255,19 +244,16 @@ export default function App() {
           authorLabel="SAFARNAMA AI · Desert Horizons & Mountain Dawns"
         />
 
-        {/* 10. Beautiful Journeys, Smaller Budgets */}
         <BudgetFriendlySpotlight
           onPlanTrip={handlePlanDestinationShortcut}
           onDiscoverPlace={(dest) => setSelectedDestinationDetail(dest)}
         />
 
-        {/* 11. Explore India on the Map */}
         <MapExplorerSection
           onPlanTrip={handlePlanDestinationShortcut}
           onDiscoverPlace={(dest) => setSelectedDestinationDetail(dest)}
         />
 
-        {/* 12. Quote Interlude 3 */}
         <QuoteSection
           quote={TRAVEL_QUOTES[2]?.quote || "Your next unforgettable story is one journey away."}
           tagline="The Soul of the Journey"
@@ -275,7 +261,6 @@ export default function App() {
           authorLabel="SAFARNAMA AI · Sacred Rivers & Quiet Waters"
         />
 
-        {/* 13. Trip Planning Form */}
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
           <TripForm
             onSubmit={handleOptimizeTrip}
@@ -286,7 +271,6 @@ export default function App() {
           />
         </div>
 
-        {/* 14. Results Dashboard */}
         {planResult && (
           <div id="trip-results-view" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
             <TripResults
@@ -301,7 +285,6 @@ export default function App() {
           </div>
         )}
 
-        {/* 15. Your Next Story Starts Here */}
         <ClosingStorySection
           onPlanTripClick={() => scrollToSection('plan-form')}
           onExploreClick={() => scrollToSection('destinations-gallery')}
@@ -309,7 +292,6 @@ export default function App() {
         />
       </main>
 
-      {/* Footer */}
       <footer className="border-t border-[#D8C3A5] bg-white py-14 text-xs text-[#77717F] font-sans">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8">
           <div className="flex flex-col md:flex-row items-center justify-between gap-6 pb-6 border-b border-[#D8C3A5]/70">
@@ -366,7 +348,6 @@ export default function App() {
         </div>
       </footer>
 
-      {/* Modals */}
       <DestinationDiscoveryModal
         isOpen={isDestinationDiscoveryOpen}
         onClose={() => setIsDestinationDiscoveryOpen(false)}
