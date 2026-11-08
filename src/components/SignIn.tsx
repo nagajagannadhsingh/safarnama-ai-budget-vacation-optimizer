@@ -37,7 +37,6 @@ export function SignIn() {
     }
   };
 
-  // Original SAFARNAMA scenic image
   const scenicStyle: React.CSSProperties = {
     backgroundImage: "url('/safarnama%20login%20page.png')",
     backgroundSize: "158.5% 100%",
@@ -45,54 +44,29 @@ export function SignIn() {
     backgroundRepeat: "no-repeat",
   };
 
-  // Same SAFARNAMA image, cropped for the glass login card
-  const cardBackgroundStyle: React.CSSProperties = {
-    backgroundImage: "url('/safarnama%20login%20page.png')",
-    backgroundSize: "300% 100%",
-    backgroundPosition: "40% center",
-    backgroundRepeat: "no-repeat",
-    filter: "blur(3px)",
-    transform: "scale(1.04)",
-  };
-
-  // Matching background atmosphere
   const atmosphereStyle: React.CSSProperties = {
     backgroundImage: `
-      radial-gradient(
-        ellipse at 85% 10%,
-        rgba(120,201,208,0.35),
-        transparent 45%
-      ),
-      radial-gradient(
-        ellipse at 10% 90%,
-        rgba(155,114,207,0.25),
-        transparent 45%
-      ),
-      linear-gradient(
-        135deg,
-        #E8F5F0,
-        #FAF7F0,
-        #EDE1EF
-      )
+      radial-gradient(ellipse at 85% 12%, rgba(120,201,208,0.35), transparent 45%),
+      radial-gradient(ellipse at 10% 90%, rgba(155,114,207,0.22), transparent 45%),
+      linear-gradient(135deg, #E8F5F0, #FAF7F0, #EDE1EF)
     `,
   };
 
-  // Google sign-in button
   const GoogleButton = () => (
     <button
       type="button"
       onClick={handleGoogleSignIn}
       disabled={loading}
       className="
-        flex min-h-[62px] w-full
-        items-center justify-center gap-3
-        rounded-full bg-white px-5 py-4
+        flex min-h-[62px] w-full items-center
+        justify-center gap-3 rounded-full
+        bg-white/90 px-5 py-4
         font-heading text-base font-bold
-        text-[#35183E]
+        text-[#4B294F]
         shadow-lg shadow-[#4B294F]/15
         transition-all duration-200
-        hover:-translate-y-0.5 hover:shadow-xl
-        active:scale-[0.98]
+        hover:-translate-y-0.5 hover:bg-white
+        hover:shadow-xl active:scale-[0.98]
         disabled:cursor-wait disabled:opacity-70
         focus:outline-none
         focus-visible:ring-4
@@ -106,27 +80,11 @@ export function SignIn() {
         </>
       ) : (
         <>
-          <svg
-            viewBox="0 0 48 48"
-            className="h-7 w-7"
-            aria-hidden="true"
-          >
-            <path
-              fill="#EA4335"
-              d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"
-            />
-            <path
-              fill="#4285F4"
-              d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.25 5.48-4.71 7.18l7.19 5.59c4.19-3.87 6.56-9.57 6.56-17.24z"
-            />
-            <path
-              fill="#FBBC05"
-              d="M10.53 28.59A14.4 14.4 0 0 1 9.75 24c0-1.59.27-3.13.76-4.59l-7.98-6.19A23.9 23.9 0 0 0 0 24c0 3.86.93 7.51 2.56 10.78l7.97-6.19z"
-            />
-            <path
-              fill="#34A853"
-              d="M24 48c6.48 0 11.93-2.13 15.91-5.8l-7.19-5.59c-2 1.35-4.57 2.14-8.72 2.14-6.26 0-11.57-4.22-13.46-9.91l-7.98 6.19C6.51 43.62 14.62 48 24 48z"
-            />
+          <svg viewBox="0 0 48 48" className="h-7 w-7" aria-hidden="true">
+            <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />
+            <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.25 5.48-4.71 7.18l7.19 5.59c4.19-3.87 6.56-9.57 6.56-17.24z" />
+            <path fill="#FBBC05" d="M10.53 28.59A14.4 14.4 0 0 1 9.75 24c0-1.59.27-3.13.76-4.59l-7.98-6.19A23.9 23.9 0 0 0 0 24c0 3.86.93 7.51 2.56 10.78l7.97-6.19z" />
+            <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.91-5.8l-7.19-5.59c-2 1.35-4.57 2.14-8.72 2.14-6.26 0-11.57-4.22-13.46-9.91l-7.98 6.19C6.51 43.62 14.62 48 24 48z" />
           </svg>
 
           Continue with Google
@@ -136,71 +94,62 @@ export function SignIn() {
     </button>
   );
 
-  // Transparent scenic login card
   const LoginCard = () => (
-    <div
-      className="
-        relative isolate w-full max-w-[550px]
-        overflow-hidden rounded-[32px]
-        border border-white/60
-        shadow-2xl shadow-[#35183E]/20
-        ring-1 ring-white/20
-      "
-    >
-      {/* SAFARNAMA scenic image behind the card */}
-      <div
-        className="absolute inset-0 -z-20"
-        style={cardBackgroundStyle}
-      />
+    <div className="
+      relative w-full max-w-[550px]
+      overflow-hidden rounded-[32px]
+      border border-[#78C9D0]/45
+      bg-[#78C9D0]/20
+      shadow-2xl shadow-[#4B294F]/10
+      backdrop-blur-xl
+    ">
 
-      {/* Transparent glass effect */}
+      {/* Translucent aqua and orchid colour layer */}
       <div
         className="
-          pointer-events-none absolute inset-0 -z-10
+          pointer-events-none absolute inset-0
           bg-gradient-to-br
-          from-[#FAF7F0]/40
-          via-white/45
-          to-[#78C9D0]/35
-          backdrop-blur-[8px]
+          from-[#78C9D0]/30
+          via-[#FAF7F0]/20
+          to-[#9B72CF]/35
         "
       />
 
-      {/* Login card content */}
+      {/* Soft glass highlight */}
+      <div
+        className="
+          pointer-events-none absolute inset-0
+          rounded-[32px]
+          ring-1 ring-inset ring-white/35
+        "
+      />
+
       <div className="relative z-10 p-6 sm:p-9 lg:p-10">
 
-        {/* Logo */}
         <div className="mb-7 flex justify-center">
           <img
             src="/safarnama-logo.png"
             alt="SAFARNAMA AI"
-            className="
-              h-[85px] w-[270px]
-              object-contain
-            "
+            className="h-[85px] w-[270px] object-contain"
           />
         </div>
 
-        {/* Welcome label */}
         <div className="mb-5 flex items-center justify-center gap-4">
-          <span className="h-px flex-1 bg-[#C2185B]/60" />
-
+          <span className="h-px flex-1 bg-[#C2185B]/50" />
           <span className="
             whitespace-nowrap font-heading
-            text-xs font-extrabold
-            tracking-[2px] text-[#C2185B]
-            sm:text-sm
+            text-xs font-extrabold tracking-[2px]
+            text-[#C2185B] sm:text-sm
           ">
             WELCOME TO YOUR JOURNEY
           </span>
-
-          <span className="h-px flex-1 bg-[#C2185B]/60" />
+          <span className="h-px flex-1 bg-[#C2185B]/50" />
         </div>
 
-        {/* Heading */}
         <h2 className="
           text-center font-heading
           text-2xl font-extrabold
-          leading-tight text-[#35183E]
+          leading-tight text-[#4B294F]
           sm:text-3xl
         ">
           Let's explore the world.
@@ -209,7 +158,7 @@ export function SignIn() {
         <p className="
           mx-auto mt-4 max-w-md
           text-center font-sans
-          text-sm leading-7 text-[#30252D]
+          text-sm leading-7 text-[#4B294F]
           sm:text-base
         ">
           Sign in to discover destinations,
@@ -217,63 +166,47 @@ export function SignIn() {
           save all your travel plans in one place.
         </p>
 
-        {/* Google button */}
         <div className="mt-8">
           <GoogleButton />
         </div>
 
-        {/* Security message */}
         <div className="
-          mt-5 flex items-center
-          justify-center gap-2
-          text-center text-xs
-          font-medium text-[#30252D]
+          mt-5 flex items-center justify-center
+          gap-2 text-center text-xs
+          font-medium text-[#4B294F]
         ">
-          <ShieldCheck
-            size={22}
-            className="shrink-0 text-[#009DB5]"
-          />
+          <ShieldCheck size={22} className="shrink-0 text-[#009DB5]" />
           Secure authentication powered by Google
         </div>
 
-        {/* Divider */}
         <div className="my-7 flex items-center gap-4">
-          <span className="h-px flex-1 bg-[#4B294F]/40" />
-
-          <Plane
-            size={22}
-            className="-rotate-12 text-[#4B294F]"
-          />
-
-          <span className="h-px flex-1 bg-[#4B294F]/40" />
+          <span className="h-px flex-1 bg-[#4B294F]/30" />
+          <Plane size={22} className="-rotate-12 text-[#4B294F]" />
+          <span className="h-px flex-1 bg-[#4B294F]/30" />
         </div>
 
-        {/* Description */}
         <p className="
           text-center font-sans
-          text-xs leading-6 text-[#30252D]
+          text-xs leading-6 text-[#4B294F]
           sm:text-sm
         ">
           By continuing, you can access your saved
           journeys and personalized travel experiences.
         </p>
 
-        {/* Footer */}
         <p className="
           mt-7 text-center font-heading
-          text-xs font-extrabold
-          text-[#35183E]
+          text-xs font-extrabold text-[#4B294F]
         ">
           MADE FOR EXPLORERS. BUILT FOR YOUR JOURNEY.
         </p>
 
-        {/* Error */}
         {error && (
           <div
             role="alert"
             className="
               mt-5 rounded-xl border
-              border-red-200 bg-white/90
+              border-red-200 bg-[#FAF7F0]/90
               p-3 text-center text-sm
               font-medium text-red-600
             "
@@ -291,22 +224,17 @@ export function SignIn() {
       overflow-x-hidden bg-[#FAF7F0]
     ">
 
-      {/* DESKTOP LAYOUT */}
+      {/* DESKTOP */}
       <section className="
         relative hidden min-h-[100svh]
         w-full overflow-hidden lg:flex
       ">
 
-        {/* Original scenic image */}
         <div
-          className="
-            relative w-[60%]
-            shrink-0 overflow-hidden
-          "
+          className="relative w-[60%] shrink-0 overflow-hidden"
           style={scenicStyle}
         />
 
-        {/* Matching atmospheric background */}
         <div
           className="
             relative flex min-h-[100svh]
@@ -321,13 +249,12 @@ export function SignIn() {
         </div>
       </section>
 
-      {/* MOBILE AND TABLET LAYOUT */}
+      {/* MOBILE AND TABLET */}
       <section className="
         flex min-h-[100svh]
         flex-col lg:hidden
       ">
 
-        {/* Original scenic image */}
         <div
           className="
             relative h-[min(100vw,680px)]
@@ -336,7 +263,6 @@ export function SignIn() {
           style={scenicStyle}
         />
 
-        {/* Same background and same login card */}
         <div
           className="
             relative flex flex-1
