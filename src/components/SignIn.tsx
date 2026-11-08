@@ -9,9 +9,29 @@ export function SignIn() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const handleGoogleSignIn = async () => {
-    setLoading(true);
-    setError("");
+  
+const handleGoogleSignIn = async () => {
+  setLoading(true);
+  setError("");
+
+  try {
+    await signInWithGoogle();
+  } catch (err: any) {
+    console.error("Google sign-in error:", err);
+
+    if (err.code === "auth/popup-closed-by-user") {
+      // User cancelled: return to the normal sign-in screen.
+      setError("");
+    } else if (err.code === "auth/unauthorized-domain") {
+      setError("This website domain is not authorized in Firebase.");
+    } else {
+      setError(err.message || "Unable to sign in. Please try again.");
+    }
+  } finally {
+    // Re-enable the Google button.
+    setLoading(false);
+  }
+};
 
     try {
       await signInWithGoogle();
