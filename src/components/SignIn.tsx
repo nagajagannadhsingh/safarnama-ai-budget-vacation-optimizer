@@ -31,48 +31,49 @@ export function SignIn() {
           ? "This website domain is not authorized in Firebase."
           : err.message || "Unable to sign in. Please try again."
       );
-    } finally {
+    } font-sans finally {
       setLoading(false);
     }
   };
 
-  // Background image featuring Taj Mahal & Kerala Houseboat synthesis
-  const bgImage =
-    "https://images.unsplash.com/photo-1564507592333-c60657eea523?auto=format&fit=crop&w=2000&q=90";
+  // High-resolution background composition
+  const backgroundUrl =
+    "https://images.unsplash.com/photo-1564507592333-c60657eea523?auto=format&fit=crop&w=2400&q=95";
 
   return (
     <main className="relative min-h-screen w-full overflow-hidden font-sans">
-      {/* BACKGROUND IMAGE & OVERLAYS */}
+      {/* REAL PHOTOGRAPHIC BACKGROUND */}
       <div
         className="absolute inset-0 bg-cover bg-center bg-no-repeat"
-        style={{ backgroundImage: `url("${bgImage}")` }}
+        style={{ backgroundImage: `url("${backgroundUrl}")` }}
       >
-        <div className="absolute inset-0 bg-gradient-to-r from-amber-500/10 via-transparent to-purple-900/30" />
+        {/* Warm Golden Sunrise Overlay */}
+        <div className="absolute inset-0 bg-gradient-to-r from-amber-500/15 via-transparent to-purple-950/20" />
       </div>
 
-      {/* MAIN LAYOUT CONTENT */}
+      {/* PAGE CONTAINER */}
       <div className="relative z-10 mx-auto flex min-h-screen max-w-[1600px] flex-col justify-between px-6 py-8 sm:px-12 lg:flex-row lg:items-center lg:px-20">
         
         {/* LEFT HERO SECTION */}
-        <section className="flex max-w-2xl flex-col justify-center text-[#2D1A32]">
+        <section className="flex max-w-2xl flex-col justify-center text-[#2A173B]">
           
           {/* BRAND LOGO HEADER */}
-          <div className="mb-8">
+          <div className="mb-6">
             <img
               src="/safarnama-logo.png"
               alt="SAFARNAMA AI - Budget Vacation Optimizer"
-              className="h-16 w-auto object-contain drop-shadow-md sm:h-20"
+              className="h-16 w-auto object-contain sm:h-20"
             />
           </div>
 
           {/* BADGE */}
-          <div className="mb-6 flex w-fit items-center gap-2 rounded-full border border-white/60 bg-white/45 px-5 py-2 text-sm font-semibold text-[#2D1A32] shadow-lg backdrop-blur-md">
-            <Sparkles size={16} className="text-[#00A896]" />
+          <div className="mb-6 flex w-fit items-center gap-2 rounded-full border border-white/60 bg-white/50 px-4 py-2 text-xs font-semibold text-[#2A173B] shadow-sm backdrop-blur-md">
+            <Sparkles size={15} className="text-[#2A173B]" />
             Intelligent travel planning
           </div>
 
           {/* MAIN HEADING */}
-          <h1 className="font-heading text-5xl font-extrabold leading-[1.08] tracking-tight text-[#2D1A32] sm:text-6xl lg:text-7xl">
+          <h1 className="font-heading text-5xl font-extrabold leading-[1.05] tracking-tight text-[#2A173B] sm:text-6xl lg:text-7xl">
             Your next
             <br />
             adventure
@@ -81,33 +82,33 @@ export function SignIn() {
           </h1>
 
           {/* SUBTITLE */}
-          <p className="mt-6 max-w-xl text-base font-medium leading-relaxed text-[#4A3B4E] sm:text-lg">
+          <p className="mt-6 max-w-xl text-base font-medium leading-relaxed text-[#3B284C] sm:text-lg">
             Discover amazing destinations, create personalized journeys and make
             every travel experience memorable without exceeding your budget.
           </p>
 
           {/* DESTINATION / FEATURE TAGS */}
           <div className="mt-8 flex flex-wrap gap-3">
-            <div className="flex items-center gap-2 rounded-full border border-white/50 bg-white/40 px-5 py-2.5 text-sm font-semibold text-[#2D1A32] shadow-sm backdrop-blur-md">
-              <Plane size={16} className="rotate-45 text-[#2D1A32]" />
+            <div className="flex items-center gap-2 rounded-full border border-white/60 bg-white/50 px-4 py-2.5 text-xs font-semibold text-[#2A173B] shadow-sm backdrop-blur-md">
+              <Plane size={15} className="rotate-45 text-[#2A173B]" />
               Smart itineraries
             </div>
 
-            <div className="flex items-center gap-2 rounded-full border border-white/50 bg-white/40 px-5 py-2.5 text-sm font-semibold text-[#2D1A32] shadow-sm backdrop-blur-md">
-              <Wallet size={16} className="text-[#2D1A32]" />
+            <div className="flex items-center gap-2 rounded-full border border-white/60 bg-white/50 px-4 py-2.5 text-xs font-semibold text-[#2A173B] shadow-sm backdrop-blur-md">
+              <Wallet size={15} className="text-[#2A173B]" />
               Budget friendly
             </div>
 
-            <div className="flex items-center gap-2 rounded-full border border-white/50 bg-white/40 px-5 py-2.5 text-sm font-semibold text-[#2D1A32] shadow-sm backdrop-blur-md">
-              <MapPin size={16} className="text-[#2D1A32]" />
+            <div className="flex items-center gap-2 rounded-full border border-white/60 bg-white/50 px-4 py-2.5 text-xs font-semibold text-[#2A173B] shadow-sm backdrop-blur-md">
+              <MapPin size={15} className="text-[#2A173B]" />
               Explore more
             </div>
           </div>
         </section>
 
         {/* RIGHT SIGN-IN GLASS CARD */}
-        <section className="w-full max-w-[460px] self-center py-6 lg:py-0">
-          <div className="relative overflow-hidden rounded-[36px] border border-white/70 bg-white/60 p-8 shadow-[0_20px_70px_rgba(0,0,0,0.15)] backdrop-blur-2xl sm:p-10">
+        <section className="w-full max-w-[480px] self-center py-6 lg:py-0">
+          <div className="relative overflow-hidden rounded-[36px] border border-white/70 bg-white/50 p-8 shadow-[0_25px_80px_rgba(0,0,0,0.18)] backdrop-blur-3xl sm:p-10">
             
             <div className="relative z-10 flex flex-col items-center text-center">
               
@@ -118,23 +119,24 @@ export function SignIn() {
                 className="mb-6 h-14 w-auto object-contain"
               />
 
-              {/* CARD SUBTITLE DIVIDER */}
+              {/* WELCOME DIVIDER */}
               <div className="mb-4 flex w-full items-center justify-center gap-3">
-                <div className="h-px flex-1 bg-gradient-to-r from-transparent to-[#E06D8A]" />
-                <span className="text-[11px] font-bold tracking-[0.2em] text-[#E06D8A]">
+                <div className="h-[1px] flex-1 bg-[#D81B60]/40" />
+                <span className="text-[11px] font-bold tracking-[0.2em] text-[#D81B60]">
                   WELCOME TO YOUR JOURNEY
                 </span>
-                <div className="h-px flex-1 bg-gradient-to-l from-transparent to-[#E06D8A]" />
+                <div className="h-[1px] flex-1 bg-[#D81B60]/40" />
               </div>
 
-              {/* CARD HEADING */}
-              <h2 className="font-heading text-3xl font-extrabold text-[#2D1A32] sm:text-4xl">
+              {/* CARD TITLE */}
+              <h2 className="font-heading text-3xl font-extrabold tracking-tight text-[#2A173B] sm:text-4xl">
                 Let's explore the world.
               </h2>
 
-              <p className="mt-3 text-sm leading-6 text-[#5E4E63]">
+              {/* CARD DESCRIPTION */}
+              <p className="mt-3 text-sm leading-6 text-[#5E4D6E]">
                 Sign in to discover destinations, build{" "}
-                <span className="font-semibold text-[#2D1A32]">
+                <span className="font-medium text-[#2A173B]">
                   your dream itinerary
                 </span>{" "}
                 and save all your travel plans in one place.
@@ -145,10 +147,10 @@ export function SignIn() {
                 type="button"
                 onClick={handleGoogleSignIn}
                 disabled={loading}
-                className="group relative mt-7 flex w-full items-center justify-center gap-3 rounded-full border border-gray-200 bg-white py-3.5 px-6 font-semibold text-[#2D1A32] shadow-lg transition-all duration-300 hover:scale-[1.02] hover:shadow-xl active:scale-95 disabled:cursor-not-allowed disabled:opacity-75"
+                className="group relative mt-7 flex w-full items-center justify-center gap-3 rounded-full bg-white py-3.5 px-6 font-semibold text-[#2A173B] shadow-md transition-all duration-300 hover:scale-[1.01] hover:shadow-lg active:scale-98 disabled:cursor-not-allowed disabled:opacity-75"
               >
                 {loading ? (
-                  <LoaderCircle size={20} className="animate-spin text-[#2D1A32]" />
+                  <LoaderCircle size={20} className="animate-spin text-[#2A173B]" />
                 ) : (
                   <svg viewBox="0 0 48 48" className="h-5 w-5 shrink-0">
                     <path
@@ -170,45 +172,46 @@ export function SignIn() {
                   </svg>
                 )}
 
-                <span className="text-base font-bold">
+                <span className="text-base font-bold text-[#2A173B]">
                   {loading ? "Connecting to Google..." : "Continue with Google"}
                 </span>
 
                 {!loading && (
                   <ArrowRight
                     size={18}
-                    className="absolute right-5 transition-transform duration-300 group-hover:translate-x-1"
+                    className="absolute right-6 text-[#2A173B] transition-transform duration-300 group-hover:translate-x-1"
                   />
                 )}
               </button>
 
-              {/* ERROR DISPLAY */}
+              {/* ERROR ALERT */}
               {error && (
                 <p className="mt-3 w-full rounded-xl border border-red-200 bg-red-50 p-2.5 text-xs text-red-600">
                   {error}
                 </p>
               )}
 
-              {/* SECURITY NOTE */}
-              <div className="mt-5 flex items-center gap-2 text-xs font-semibold text-[#5E4E63]">
+              {/* SECURITY ASSURANCE */}
+              <div className="mt-5 flex items-center gap-2 text-xs font-semibold text-[#5E4D6E]">
                 <ShieldCheck size={16} className="text-[#00A896]" />
                 Secure authentication powered by Google
               </div>
 
               {/* DIVIDER WITH PLANE ICON */}
               <div className="my-6 flex w-full items-center justify-center gap-3">
-                <div className="h-px flex-1 bg-gray-300/60" />
-                <Plane size={14} className="rotate-45 text-[#2D1A32]" />
-                <div className="h-px flex-1 bg-gray-300/60" />
+                <div className="h-[1px] flex-1 bg-gray-400/40" />
+                <Plane size={14} className="rotate-45 text-[#2A173B]" />
+                <div className="h-[1px] flex-1 bg-gray-400/40" />
               </div>
 
-              {/* TERMS & FOOTER */}
-              <p className="max-w-xs text-xs leading-5 text-[#5E4E63]">
+              {/* TERMS STATEMENT */}
+              <p className="max-w-xs text-xs leading-5 text-[#5E4D6E]">
                 By continuing, you can access your saved journeys and
                 personalized travel experiences.
               </p>
 
-              <p className="mt-6 text-[11px] font-bold uppercase tracking-widest text-[#2D1A32]">
+              {/* FOOTER SLOGAN IN CARD */}
+              <p className="mt-6 text-[11px] font-extrabold uppercase tracking-widest text-[#2A173B]">
                 MADE FOR EXPLORERS. BUILT FOR YOUR JOURNEY.
               </p>
             </div>
@@ -216,12 +219,12 @@ export function SignIn() {
         </section>
       </div>
 
-      {/* BOTTOM FOOTER SLOGAN */}
-      <div className="pointer-events-none absolute bottom-4 left-0 right-0 z-10 hidden items-center justify-center gap-2 text-xs font-medium text-[#2D1A32] drop-shadow-sm md:flex">
-        <div className="h-px w-12 bg-[#2D1A32]/40" />
+      {/* BOTTOM CENTERED FOOTER SLOGAN */}
+      <div className="pointer-events-none absolute bottom-4 left-0 right-0 z-10 hidden items-center justify-center gap-3 text-xs font-medium text-[#2A173B] md:flex">
+        <div className="h-[1px] w-12 bg-[#2A173B]/30" />
         <span>Discover the world, one journey at a time.</span>
-        <Plane size={12} className="rotate-45 text-[#2D1A32]" />
-        <div className="h-px w-12 bg-[#2D1A32]/40" />
+        <Plane size={12} className="rotate-45 text-[#2A173B]" />
+        <div className="h-[1px] w-12 bg-[#2A173B]/30" />
       </div>
     </main>
   );
