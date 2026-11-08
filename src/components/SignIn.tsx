@@ -31,7 +31,7 @@ export function SignIn() {
           ? "This website domain is not authorized in Firebase."
           : err.message || "Unable to sign in. Please try again."
       );
-    } font-sans finally {
+    } finally {
       setLoading(false);
     }
   };
