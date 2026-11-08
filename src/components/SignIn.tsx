@@ -10,6 +10,7 @@ import {
 
 export function SignIn() {
   const { signInWithGoogle } = useAuth();
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -44,6 +45,38 @@ export function SignIn() {
     backgroundRepeat: "no-repeat",
   };
 
+  // Same SAFARNAMA image, cropped for the glass login card
+  const cardBackgroundStyle: React.CSSProperties = {
+    backgroundImage: "url('/safarnama%20login%20page.png')",
+    backgroundSize: "300% 100%",
+    backgroundPosition: "40% center",
+    backgroundRepeat: "no-repeat",
+    filter: "blur(3px)",
+    transform: "scale(1.04)",
+  };
+
+  // Matching background atmosphere
+  const atmosphereStyle: React.CSSProperties = {
+    backgroundImage: `
+      radial-gradient(
+        ellipse at 85% 10%,
+        rgba(120,201,208,0.35),
+        transparent 45%
+      ),
+      radial-gradient(
+        ellipse at 10% 90%,
+        rgba(155,114,207,0.25),
+        transparent 45%
+      ),
+      linear-gradient(
+        135deg,
+        #E8F5F0,
+        #FAF7F0,
+        #EDE1EF
+      )
+    `,
+  };
+
   // Google sign-in button
   const GoogleButton = () => (
     <button
@@ -51,9 +84,9 @@ export function SignIn() {
       onClick={handleGoogleSignIn}
       disabled={loading}
       className="
-        flex min-h-[62px] w-full items-center
-        justify-center gap-3 rounded-full
-        bg-white px-5 py-4
+        flex min-h-[62px] w-full
+        items-center justify-center gap-3
+        rounded-full bg-white px-5 py-4
         font-heading text-base font-bold
         text-[#35183E]
         shadow-lg shadow-[#4B294F]/15
@@ -73,12 +106,29 @@ export function SignIn() {
         </>
       ) : (
         <>
-          <svg viewBox="0 0 48 48" className="h-7 w-7" aria-hidden="true">
-            <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />
-            <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.25 5.48-4.71 7.18l7.19 5.59c4.19-3.87 6.56-9.57 6.56-17.24z" />
-            <path fill="#FBBC05" d="M10.53 28.59A14.4 14.4 0 0 1 9.75 24c0-1.59.27-3.13.76-4.59l-7.98-6.19A23.9 23.9 0 0 0 0 24c0 3.86.93 7.51 2.56 10.78l7.97-6.19z" />
-            <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.91-5.8l-7.19-5.59c-2 1.35-4.57 2.14-8.72 2.14-6.26 0-11.57-4.22-13.46-9.91l-7.98 6.19C6.51 43.62 14.62 48 24 48z" />
+          <svg
+            viewBox="0 0 48 48"
+            className="h-7 w-7"
+            aria-hidden="true"
+          >
+            <path
+              fill="#EA4335"
+              d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"
+            />
+            <path
+              fill="#4285F4"
+              d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.25 5.48-4.71 7.18l7.19 5.59c4.19-3.87 6.56-9.57 6.56-17.24z"
+            />
+            <path
+              fill="#FBBC05"
+              d="M10.53 28.59A14.4 14.4 0 0 1 9.75 24c0-1.59.27-3.13.76-4.59l-7.98-6.19A23.9 23.9 0 0 0 0 24c0 3.86.93 7.51 2.56 10.78l7.97-6.19z"
+            />
+            <path
+              fill="#34A853"
+              d="M24 48c6.48 0 11.93-2.13 15.91-5.8l-7.19-5.59c-2 1.35-4.57 2.14-8.72 2.14-6.26 0-11.57-4.22-13.46-9.91l-7.98 6.19C6.51 43.62 14.62 48 24 48z"
+            />
           </svg>
+
           Continue with Google
           <ArrowRight size={20} />
         </>
@@ -88,55 +138,65 @@ export function SignIn() {
 
   // Transparent scenic login card
   const LoginCard = () => (
-    <div className="
-      relative isolate w-full max-w-[550px]
-      overflow-hidden rounded-[32px]
-      border border-white/60
-      shadow-2xl shadow-[#35183E]/20
-    ">
-
-      {/* Travel photograph */}
+    <div
+      className="
+        relative isolate w-full max-w-[550px]
+        overflow-hidden rounded-[32px]
+        border border-white/60
+        shadow-2xl shadow-[#35183E]/20
+        ring-1 ring-white/20
+      "
+    >
+      {/* SAFARNAMA scenic image behind the card */}
       <div
         className="absolute inset-0 -z-20"
-        style={{
-          backgroundImage:
-            "url('https://images.unsplash.com/photo-1501785888041-af3ef285b470?auto=format&fit=crop&w=1200&q=85')",
-          backgroundSize: "cover",
-          backgroundPosition: "center",
-        }}
+        style={cardBackgroundStyle}
       />
 
-      {/* Transparent glass overlay */}
-      <div className="
-        pointer-events-none absolute inset-0 -z-10
-        bg-gradient-to-br
-        from-white/75 via-[#FAF7F0]/65
-        to-[#78C9D0]/55
-        backdrop-blur-[3px]
-      " />
+      {/* Transparent glass effect */}
+      <div
+        className="
+          pointer-events-none absolute inset-0 -z-10
+          bg-gradient-to-br
+          from-[#FAF7F0]/40
+          via-white/45
+          to-[#78C9D0]/35
+          backdrop-blur-[8px]
+        "
+      />
 
+      {/* Login card content */}
       <div className="relative z-10 p-6 sm:p-9 lg:p-10">
 
+        {/* Logo */}
         <div className="mb-7 flex justify-center">
           <img
             src="/safarnama-logo.png"
             alt="SAFARNAMA AI"
-            className="h-[85px] w-[270px] object-contain"
+            className="
+              h-[85px] w-[270px]
+              object-contain
+            "
           />
         </div>
 
+        {/* Welcome label */}
         <div className="mb-5 flex items-center justify-center gap-4">
           <span className="h-px flex-1 bg-[#C2185B]/60" />
+
           <span className="
             whitespace-nowrap font-heading
-            text-xs font-extrabold tracking-[2px]
-            text-[#C2185B] sm:text-sm
+            text-xs font-extrabold
+            tracking-[2px] text-[#C2185B]
+            sm:text-sm
           ">
             WELCOME TO YOUR JOURNEY
           </span>
+
           <span className="h-px flex-1 bg-[#C2185B]/60" />
         </div>
 
+        {/* Heading */}
         <h2 className="
           text-center font-heading
           text-2xl font-extrabold
@@ -157,25 +217,38 @@ export function SignIn() {
           save all your travel plans in one place.
         </p>
 
+        {/* Google button */}
         <div className="mt-8">
           <GoogleButton />
         </div>
 
+        {/* Security message */}
         <div className="
-          mt-5 flex items-center justify-center
-          gap-2 text-center text-xs
+          mt-5 flex items-center
+          justify-center gap-2
+          text-center text-xs
           font-medium text-[#30252D]
         ">
-          <ShieldCheck size={22} className="shrink-0 text-[#009DB5]" />
+          <ShieldCheck
+            size={22}
+            className="shrink-0 text-[#009DB5]"
+          />
           Secure authentication powered by Google
         </div>
 
+        {/* Divider */}
         <div className="my-7 flex items-center gap-4">
           <span className="h-px flex-1 bg-[#4B294F]/40" />
-          <Plane size={22} className="-rotate-12 text-[#4B294F]" />
+
+          <Plane
+            size={22}
+            className="-rotate-12 text-[#4B294F]"
+          />
+
           <span className="h-px flex-1 bg-[#4B294F]/40" />
         </div>
 
+        {/* Description */}
         <p className="
           text-center font-sans
           text-xs leading-6 text-[#30252D]
@@ -185,20 +258,24 @@ export function SignIn() {
           journeys and personalized travel experiences.
         </p>
 
+        {/* Footer */}
         <p className="
           mt-7 text-center font-heading
-          text-xs font-extrabold text-[#35183E]
+          text-xs font-extrabold
+          text-[#35183E]
         ">
           MADE FOR EXPLORERS. BUILT FOR YOUR JOURNEY.
         </p>
 
+        {/* Error */}
         {error && (
           <div
             role="alert"
             className="
-              mt-5 rounded-xl border border-red-200
-              bg-white/90 p-3 text-center
-              text-sm font-medium text-red-600
+              mt-5 rounded-xl border
+              border-red-200 bg-white/90
+              p-3 text-center text-sm
+              font-medium text-red-600
             "
           >
             {error}
@@ -220,25 +297,23 @@ export function SignIn() {
         w-full overflow-hidden lg:flex
       ">
 
+        {/* Original scenic image */}
         <div
-          className="relative w-[60%] shrink-0 overflow-hidden"
+          className="
+            relative w-[60%]
+            shrink-0 overflow-hidden
+          "
           style={scenicStyle}
         />
 
+        {/* Matching atmospheric background */}
         <div
           className="
             relative flex min-h-[100svh]
             flex-1 items-center justify-center
             overflow-y-auto p-7
           "
-          style={{
-            backgroundImage: `
-              radial-gradient(ellipse at 85% 12%, rgba(120,201,208,0.48), transparent 42%),
-              radial-gradient(ellipse at 10% 85%, rgba(155,114,207,0.30), transparent 45%),
-              radial-gradient(ellipse at 90% 90%, rgba(194,24,91,0.13), transparent 40%),
-              linear-gradient(135deg, #E8F5F0, #FAF7F0, #EDE1EF)
-            `,
-          }}
+          style={atmosphereStyle}
         >
           <div className="w-full max-w-[550px]">
             <LoginCard />
@@ -247,8 +322,12 @@ export function SignIn() {
       </section>
 
       {/* MOBILE AND TABLET LAYOUT */}
-      <section className="flex min-h-[100svh] flex-col lg:hidden">
+      <section className="
+        flex min-h-[100svh]
+        flex-col lg:hidden
+      ">
 
+        {/* Original scenic image */}
         <div
           className="
             relative h-[min(100vw,680px)]
@@ -257,22 +336,21 @@ export function SignIn() {
           style={scenicStyle}
         />
 
+        {/* Same background and same login card */}
         <div
-          className="relative flex flex-1 justify-center px-4 py-8 sm:px-7"
-          style={{
-            backgroundImage: `
-              radial-gradient(ellipse at 85% 12%, rgba(120,201,208,0.48), transparent 42%),
-              radial-gradient(ellipse at 10% 85%, rgba(155,114,207,0.30), transparent 45%),
-              radial-gradient(ellipse at 90% 90%, rgba(194,24,91,0.13), transparent 40%),
-              linear-gradient(135deg, #E8F5F0, #FAF7F0, #EDE1EF)
-            `,
-          }}
+          className="
+            relative flex flex-1
+            justify-center px-4 py-8
+            sm:px-7
+          "
+          style={atmosphereStyle}
         >
           <div className="w-full max-w-[550px]">
             <LoginCard />
           </div>
         </div>
       </section>
+
     </main>
   );
 }
