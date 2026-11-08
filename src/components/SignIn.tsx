@@ -9,43 +9,28 @@ export function SignIn() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  
-const handleGoogleSignIn = async () => {
-  setLoading(true);
-  setError("");
+  // GOOGLE SIGN-IN HANDLER
+  const handleGoogleSignIn = async () => {
+    if (loading) return;
 
-  try {
-    await signInWithGoogle();
-  } catch (err: any) {
-    console.error("Google sign-in error:", err);
-
-    if (err.code === "auth/popup-closed-by-user") {
-      // User cancelled: return to the normal sign-in screen.
-      setError("");
-    } else if (err.code === "auth/unauthorized-domain") {
-      setError("This website domain is not authorized in Firebase.");
-    } else {
-      setError(err.message || "Unable to sign in. Please try again.");
-    }
-  } finally {
-    // Re-enable the Google button.
-    setLoading(false);
-  }
-};
+    setLoading(true);
+    setError("");
 
     try {
       await signInWithGoogle();
     } catch (err: any) {
       console.error("Google sign-in error:", err);
 
-      setError(
-        err.code === "auth/popup-closed-by-user"
-          ? "Sign-in was cancelled. Please try again."
-          : err.code === "auth/unauthorized-domain"
-          ? "This website domain is not authorized in Firebase."
-          : err.message || "Unable to sign in. Please try again."
-      );
+      if (err.code === "auth/popup-closed-by-user") {
+        // User cancelled: stay on the sign-in page.
+        setError("");
+      } else if (err.code === "auth/unauthorized-domain") {
+        setError("This website domain is not authorized in Firebase.");
+      } else {
+        setError(err.message || "Unable to sign in. Please try again.");
+      }
     } finally {
+      // Always enable the button again.
       setLoading(false);
     }
   };
@@ -61,7 +46,7 @@ const handleGoogleSignIn = async () => {
         draggable={false}
       />
 
-      {/* INVISIBLE CLICKABLE GOOGLE BUTTON */}
+      {/* GOOGLE SIGN-IN CLICKABLE AREA */}
       <button
         type="button"
         onClick={handleGoogleSignIn}
@@ -86,7 +71,7 @@ const handleGoogleSignIn = async () => {
         "
       >
         <span className="sr-only">
-          Continue with Google
+          {loading ? "Connecting to Google..." : "Continue with Google"}
         </span>
       </button>
 
