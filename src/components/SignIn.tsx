@@ -10,7 +10,6 @@ import {
 
 export function SignIn() {
   const { signInWithGoogle } = useAuth();
-
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -37,7 +36,7 @@ export function SignIn() {
     }
   };
 
-  // Crop the original image to show only its scenic left section.
+  // Original SAFARNAMA scenic image
   const scenicStyle: React.CSSProperties = {
     backgroundImage: "url('/safarnama%20login%20page.png')",
     backgroundSize: "158.5% 100%",
@@ -45,26 +44,16 @@ export function SignIn() {
     backgroundRepeat: "no-repeat",
   };
 
-  // Matching SAFARNAMA atmosphere for the right side.
-  const atmosphereStyle: React.CSSProperties = {
-    backgroundColor: "#FAF7F0",
-    backgroundImage: `
-      radial-gradient(ellipse at 85% 12%, rgba(120,201,208,0.48), transparent 42%),
-      radial-gradient(ellipse at 10% 85%, rgba(155,114,207,0.30), transparent 45%),
-      radial-gradient(ellipse at 90% 90%, rgba(194,24,91,0.13), transparent 40%),
-      linear-gradient(135deg, #E8F5F0 0%, #FAF7F0 48%, #EDE1EF 100%)
-    `,
-  };
-
+  // Google sign-in button
   const GoogleButton = () => (
     <button
       type="button"
       onClick={handleGoogleSignIn}
       disabled={loading}
       className="
-        flex min-h-[62px] w-full
-        items-center justify-center gap-3
-        rounded-full bg-white px-5 py-4
+        flex min-h-[62px] w-full items-center
+        justify-center gap-3 rounded-full
+        bg-white px-5 py-4
         font-heading text-base font-bold
         text-[#35183E]
         shadow-lg shadow-[#4B294F]/15
@@ -97,137 +86,193 @@ export function SignIn() {
     </button>
   );
 
-  
-const LoginCard = () => (
-  <div
-    className="
-      relative w-full max-w-[550px]
+  // Transparent scenic login card
+  const LoginCard = () => (
+    <div className="
+      relative isolate w-full max-w-[550px]
       overflow-hidden rounded-[32px]
       border border-white/60
-      bg-transparent
       shadow-2xl shadow-[#35183E]/20
-    "
-  >
-    {/* Travel photograph behind the card */}
-    <div
-      className="absolute inset-0"
-      style={{
-        backgroundImage:
-          "url('https://images.unsplash.com/photo-1501785888041-af3ef285b470?auto=format&fit=crop&w=1200&q=85')",
-        backgroundSize: "cover",
-        backgroundPosition: "center",
-      }}
-    />
+    ">
 
-    {/* Transparent glass overlay */}
-    <div className="
-      absolute inset-0
-      bg-gradient-to-br
-      from-white/75 via-[#FAF7F0]/65
-      to-[#78C9D0]/55
-      backdrop-blur-[3px]
-    " />
+      {/* Travel photograph */}
+      <div
+        className="absolute inset-0 -z-20"
+        style={{
+          backgroundImage:
+            "url('https://images.unsplash.com/photo-1501785888041-af3ef285b470?auto=format&fit=crop&w=1200&q=85')",
+          backgroundSize: "cover",
+          backgroundPosition: "center",
+        }}
+      />
 
-    {/* Card content */}
-    <div className="relative z-10 p-6 sm:p-9 lg:p-10">
+      {/* Transparent glass overlay */}
+      <div className="
+        pointer-events-none absolute inset-0 -z-10
+        bg-gradient-to-br
+        from-white/75 via-[#FAF7F0]/65
+        to-[#78C9D0]/55
+        backdrop-blur-[3px]
+      " />
 
-      <div className="mb-7 flex justify-center">
-        <img
-          src="/safarnama-logo.png"
-          alt="SAFARNAMA AI"
-          className="h-[85px] w-[270px] object-contain"
-        />
-      </div>
+      <div className="relative z-10 p-6 sm:p-9 lg:p-10">
 
-      <div className="mb-5 flex items-center justify-center gap-4">
-        <span className="h-px flex-1 bg-[#C2185B]/60" />
-        <span className="
-          whitespace-nowrap font-heading
-          text-xs font-extrabold
-          tracking-[2px] text-[#C2185B]
+        <div className="mb-7 flex justify-center">
+          <img
+            src="/safarnama-logo.png"
+            alt="SAFARNAMA AI"
+            className="h-[85px] w-[270px] object-contain"
+          />
+        </div>
+
+        <div className="mb-5 flex items-center justify-center gap-4">
+          <span className="h-px flex-1 bg-[#C2185B]/60" />
+          <span className="
+            whitespace-nowrap font-heading
+            text-xs font-extrabold tracking-[2px]
+            text-[#C2185B] sm:text-sm
+          ">
+            WELCOME TO YOUR JOURNEY
+          </span>
+          <span className="h-px flex-1 bg-[#C2185B]/60" />
+        </div>
+
+        <h2 className="
+          text-center font-heading
+          text-2xl font-extrabold
+          leading-tight text-[#35183E]
+          sm:text-3xl
+        ">
+          Let's explore the world.
+        </h2>
+
+        <p className="
+          mx-auto mt-4 max-w-md
+          text-center font-sans
+          text-sm leading-7 text-[#30252D]
+          sm:text-base
+        ">
+          Sign in to discover destinations,
+          build your dream itinerary and
+          save all your travel plans in one place.
+        </p>
+
+        <div className="mt-8">
+          <GoogleButton />
+        </div>
+
+        <div className="
+          mt-5 flex items-center justify-center
+          gap-2 text-center text-xs
+          font-medium text-[#30252D]
+        ">
+          <ShieldCheck size={22} className="shrink-0 text-[#009DB5]" />
+          Secure authentication powered by Google
+        </div>
+
+        <div className="my-7 flex items-center gap-4">
+          <span className="h-px flex-1 bg-[#4B294F]/40" />
+          <Plane size={22} className="-rotate-12 text-[#4B294F]" />
+          <span className="h-px flex-1 bg-[#4B294F]/40" />
+        </div>
+
+        <p className="
+          text-center font-sans
+          text-xs leading-6 text-[#30252D]
           sm:text-sm
         ">
-          WELCOME TO YOUR JOURNEY
-        </span>
-        <span className="h-px flex-1 bg-[#C2185B]/60" />
+          By continuing, you can access your saved
+          journeys and personalized travel experiences.
+        </p>
+
+        <p className="
+          mt-7 text-center font-heading
+          text-xs font-extrabold text-[#35183E]
+        ">
+          MADE FOR EXPLORERS. BUILT FOR YOUR JOURNEY.
+        </p>
+
+        {error && (
+          <div
+            role="alert"
+            className="
+              mt-5 rounded-xl border border-red-200
+              bg-white/90 p-3 text-center
+              text-sm font-medium text-red-600
+            "
+          >
+            {error}
+          </div>
+        )}
       </div>
-
-      <h2 className="
-        text-center font-heading
-        text-2xl font-extrabold
-        leading-tight text-[#35183E]
-        sm:text-3xl
-      ">
-        Let's explore the world.
-      </h2>
-
-      <p className="
-        mx-auto mt-4 max-w-md
-        text-center font-sans
-        text-sm leading-7 text-[#30252D]
-        sm:text-base
-      ">
-        Sign in to discover destinations,
-        build your dream itinerary and
-        save all your travel plans in one place.
-      </p>
-
-      <div className="mt-8">
-        <GoogleButton />
-      </div>
-
-      <div className="
-        mt-5 flex items-center
-        justify-center gap-2
-        text-center text-xs
-        font-medium text-[#30252D]
-      ">
-        <ShieldCheck
-          size={22}
-          className="shrink-0 text-[#009DB5]"
-        />
-        Secure authentication powered by Google
-      </div>
-
-      <div className="my-7 flex items-center gap-4">
-        <span className="h-px flex-1 bg-[#4B294F]/40" />
-        <Plane
-          size={22}
-          className="-rotate-12 text-[#4B294F]"
-        />
-        <span className="h-px flex-1 bg-[#4B294F]/40" />
-      </div>
-
-      <p className="
-        text-center font-sans
-        text-xs leading-6 text-[#30252D]
-        sm:text-sm
-      ">
-        By continuing, you can access your saved
-        journeys and personalized travel experiences.
-      </p>
-
-      <p className="
-        mt-7 text-center font-heading
-        text-xs font-extrabold text-[#35183E]
-      ">
-        MADE FOR EXPLORERS. BUILT FOR YOUR JOURNEY.
-      </p>
-
-      {error && (
-        <div
-          role="alert"
-          className="
-            mt-5 rounded-xl border
-            border-red-200 bg-white/90
-            p-3 text-center text-sm
-            font-medium text-red-600
-          "
-        >
-          {error}
-        </div>
-      )}
     </div>
-  </div>
-);
+  );
 
+  return (
+    <main className="
+      min-h-[100svh] w-full
+      overflow-x-hidden bg-[#FAF7F0]
+    ">
+
+      {/* DESKTOP LAYOUT */}
+      <section className="
+        relative hidden min-h-[100svh]
+        w-full overflow-hidden lg:flex
+      ">
+
+        <div
+          className="relative w-[60%] shrink-0 overflow-hidden"
+          style={scenicStyle}
+        />
+
+        <div
+          className="
+            relative flex min-h-[100svh]
+            flex-1 items-center justify-center
+            overflow-y-auto p-7
+          "
+          style={{
+            backgroundImage: `
+              radial-gradient(ellipse at 85% 12%, rgba(120,201,208,0.48), transparent 42%),
+              radial-gradient(ellipse at 10% 85%, rgba(155,114,207,0.30), transparent 45%),
+              radial-gradient(ellipse at 90% 90%, rgba(194,24,91,0.13), transparent 40%),
+              linear-gradient(135deg, #E8F5F0, #FAF7F0, #EDE1EF)
+            `,
+          }}
+        >
+          <div className="w-full max-w-[550px]">
+            <LoginCard />
+          </div>
+        </div>
+      </section>
+
+      {/* MOBILE AND TABLET LAYOUT */}
+      <section className="flex min-h-[100svh] flex-col lg:hidden">
+
+        <div
+          className="
+            relative h-[min(100vw,680px)]
+            w-full shrink-0 overflow-hidden
+          "
+          style={scenicStyle}
+        />
+
+        <div
+          className="relative flex flex-1 justify-center px-4 py-8 sm:px-7"
+          style={{
+            backgroundImage: `
+              radial-gradient(ellipse at 85% 12%, rgba(120,201,208,0.48), transparent 42%),
+              radial-gradient(ellipse at 10% 85%, rgba(155,114,207,0.30), transparent 45%),
+              radial-gradient(ellipse at 90% 90%, rgba(194,24,91,0.13), transparent 40%),
+              linear-gradient(135deg, #E8F5F0, #FAF7F0, #EDE1EF)
+            `,
+          }}
+        >
+          <div className="w-full max-w-[550px]">
+            <LoginCard />
+          </div>
+        </div>
+      </section>
+    </main>
+  );
+}
